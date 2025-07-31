@@ -127,3 +127,107 @@
     @apply bg-background text-foreground;
 	}
 }
+
+/* Theme-aware Video Player Styles */
+@layer components {
+  /* Video.js theme integration */
+  .video-js {
+    @apply bg-background;
+  }
+  
+  .video-js .vjs-control-bar {
+    @apply bg-background/90 backdrop-blur-sm;
+    border-top: 1px solid hsl(var(--border));
+  }
+  
+  .video-js .vjs-button > .vjs-icon-placeholder:before {
+    @apply text-foreground;
+  }
+  
+  .video-js .vjs-play-progress,
+  .video-js .vjs-volume-level {
+    @apply bg-primary;
+  }
+  
+  .video-js .vjs-progress-holder {
+    @apply bg-muted;
+  }
+  
+  .video-js .vjs-load-progress {
+    @apply bg-muted-foreground/30;
+  }
+  
+  .video-js .vjs-slider {
+    @apply bg-muted;
+  }
+  
+  .video-js .vjs-time-control {
+    @apply text-foreground;
+  }
+  
+  .video-js .vjs-remaining-time {
+    @apply text-muted-foreground;
+  }
+  
+  /* MediaElement.js theme integration */
+  .mejs__container {
+    @apply bg-background;
+  }
+  
+  .mejs__controls {
+    @apply bg-background/90 backdrop-blur-sm;
+    border-top: 1px solid hsl(var(--border));
+  }
+  
+  .mejs__button > button {
+    @apply text-foreground;
+  }
+  
+  .mejs__time {
+    @apply text-foreground;
+  }
+  
+  .mejs__time-rail .mejs__time-total {
+    @apply bg-muted;
+  }
+  
+  .mejs__time-rail .mejs__time-current {
+    @apply bg-primary;
+  }
+  
+  .mejs__time-rail .mejs__time-loaded {
+    @apply bg-muted-foreground/30;
+  }
+  
+  .mejs__horizontal-volume-slider .mejs__horizontal-volume-total {
+    @apply bg-muted;
+  }
+  
+  .mejs__horizontal-volume-slider .mejs__horizontal-volume-current {
+    @apply bg-primary;
+  }
+  
+  /* Dark mode specific adjustments */
+  .dark .video-js .vjs-big-play-button {
+    @apply bg-background/80 border-border;
+  }
+  
+  .dark .video-js .vjs-big-play-button:hover {
+    @apply bg-background/90;
+  }
+  
+  .dark .mejs__overlay-button {
+    @apply bg-background/80;
+  }
+  
+  /* Responsive player controls */
+  @media (max-width: 640px) {
+    .video-js .vjs-control-bar {
+      font-size: 14px;
+    }
+    
+    .mejs__controls {
+      height: 36px;
+    }
+  }
+}

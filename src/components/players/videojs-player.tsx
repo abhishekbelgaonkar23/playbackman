@@ -163,12 +163,32 @@ export default function VideoJSPlayer({
       videoElement.src = fileUrl;
       videoElement.className = 'video-js vjs-default-skin w-full h-auto';
 
-      // Prepare Video.js options with controls enabled
+      // Prepare Video.js options with controls enabled and mobile-friendly settings
       const playerOptions: VideoJSOptions = {
         controls: true,
         responsive: true,
         fluid: true,
         playbackRates: [0.5, 1, 1.25, 1.5, 2],
+        // Mobile-friendly options
+        touchOverlay: 'auto',
+        playsinline: true,
+        preload: 'metadata',
+        // Responsive breakpoints
+        breakpoints: {
+          tiny: 300,
+          xsmall: 400,
+          small: 500,
+          medium: 600,
+          large: 700,
+          xlarge: 800,
+          huge: 900
+        },
+        // Touch-friendly control bar
+        controlBar: {
+          volumePanel: {
+            inline: false // Use popup volume control on mobile
+          }
+        },
         ...options,
         sources: [{
           src: fileUrl,
@@ -300,10 +320,10 @@ export default function VideoJSPlayer({
   }, [cleanup]);
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full aspect-video max-w-full">
       <video
         ref={videoRef}
-        className="w-full h-auto max-h-[70vh]"
+        className="w-full h-full object-contain"
         controls={false} // Video.js will handle controls
         preload="metadata"
         playsInline

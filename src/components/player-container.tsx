@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import { LoadingState, LoadingOverlay } from '~/components/ui/spinner';
+import { ErrorDisplay, PlayerInitError } from '~/components/error-display';
 import type { PlayerContainerProps, Player, PlayerType } from '~/types';
 import type { VideoJSOptions, MediaElementOptions } from '~/types/player-config';
 import { ERROR_CODES } from '~/types/errors';
@@ -12,10 +14,11 @@ const VideoJSPlayerComponent = dynamic(() => import('./players/videojs-player'),
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center min-h-[300px] bg-black rounded-lg">
-      <div className="text-white text-center">
-        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        <p>Loading Video.js player...</p>
-      </div>
+      <LoadingState
+        message="Loading Video.js player..."
+        size="lg"
+        className="text-white"
+      />
     </div>
   )
 });
@@ -24,10 +27,11 @@ const MediaElementPlayerComponent = dynamic(() => import('./players/mediaelement
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center min-h-[300px] bg-black rounded-lg">
-      <div className="text-white text-center">
-        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        <p>Loading MediaElement.js player...</p>
-      </div>
+      <LoadingState
+        message="Loading MediaElement.js player..."
+        size="lg"
+        className="text-white"
+      />
     </div>
   )
 });
@@ -236,31 +240,13 @@ export function PlayerContainer({
   // Error state rendering
   if (state.hasError) {
     return (
-      <div className={cn("bg-black rounded-lg overflow-hidden", className)}>
-        <div className="flex items-center justify-center min-h-[300px] p-6">
-          <div className="text-center text-white space-y-4">
-            <div className="text-red-400 text-lg font-semibold">
-              Player Error
-            </div>
-            <p className="text-sm text-gray-300 max-w-md">
-              {state.errorMessage}
-            </p>
-            <div className="flex gap-2 justify-center">
-              <button
-                onClick={handleRetry}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md transition-colors"
-              >
-                Retry
-              </button>
-              <button
-                onClick={handleFallback}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-md transition-colors"
-              >
-                Try Alternative Player
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className={cn("bg-black rounded-lg overflow-hidden min-h-[200px] sm:min-h-[300px] lg:min-h-[400px] flex items-center justify-center p-4 sm:p-6", className)}>
+        <PlayerInitError
+          playerType={playerType}
+          onRetry={handleRetry}
+          onFallback={handleFallback}
+          className="bg-background/95 backdrop-blur-sm max-w-md w-full"
+        />
       </div>
     );
   }
@@ -268,7 +254,7 @@ export function PlayerContainer({
   return (
     <div 
       ref={containerRef}
-      className={cn("bg-black rounded-lg overflow-hidden", className)}
+      className={cn("bg-black rounded-lg overflow-hidden w-full", className)}
     >
       {playerType === 'videojs' ? (
         <VideoJSPlayerComponent
@@ -291,16 +277,11 @@ export function PlayerContainer({
       )}
       
       {/* Loading overlay */}
-      {state.isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
-          <div className="text-white text-center">
-            <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-sm">
-              {state.retryCount > 0 ? `Retrying... (${state.retryCount}/${MAX_RETRY_ATTEMPTS})` : 'Initializing player...'}
-            </p>
-          </div>
-        </div>
-      )}
+      <LoadingOverlay
+        isVisible={state.isLoading}
+        message={state.retryCount > 0 ? `Retrying... (${state.retryCount}/${MAX_RETRY_ATTEMPTS})` : 'Initializing player...'}
+        className="bg-black/75 text-white"
+      />
     </div>
   );
 }

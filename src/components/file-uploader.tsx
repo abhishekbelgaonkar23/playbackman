@@ -1,10 +1,13 @@
 "use client";
 
 import React, { useCallback, useState, useRef } from 'react';
-import { Upload, FileVideo, X } from 'lucide-react';
+import { Upload, FileVideo, X, Smartphone } from 'lucide-react';
 import { Card, CardContent } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
+import { LoadingOverlay } from '~/components/ui/spinner';
+import { ErrorDisplay } from '~/components/error-display';
+import { useIsMobile, useIsLandscape, useIsTouchDevice } from '~/hooks/use-responsive';
 import { cn } from '~/lib/utils';
 import type { FileUploaderProps } from '~/types';
 
@@ -17,6 +20,11 @@ export function FileUploader({
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Responsive hooks
+  const isMobile = useIsMobile();
+  const isLandscape = useIsLandscape();
+  const isTouchDevice = useIsTouchDevice();
 
   // Create accept string for file input
   const acceptString = acceptedFormats.join(',');
@@ -90,20 +98,39 @@ export function FileUploader({
   }, []);
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardContent className="p-6">
+    <Card className="w-full max-w-3xl mx-auto">
+      <CardContent className={cn(
+        "p-4 sm:p-6",
+        isMobile && isLandscape && "p-3"
+      )}>
         <div
           className={cn(
-            "relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200",
+            "relative border-2 border-dashed rounded-lg text-center transition-all duration-200",
+            "touch-manipulation", // Improve touch responsiveness
+            // Responsive padding
+            isMobile && isLandscape ? "p-3" : "p-4 sm:p-6 lg:p-8",
+            // Drag and touch states
             isDragOver 
               ? "border-primary bg-primary/5 scale-[1.02]" 
-              : "border-muted-foreground/25 hover:border-muted-foreground/50",
-            isLoading && "opacity-50 pointer-events-none"
+              : "border-muted-foreground/25 hover:border-muted-foreground/50 active:border-muted-foreground/75",
+            // Disable drag on touch devices to avoid conflicts
+            isTouchDevice && "border-muted-foreground/25",
+            isLoading && "pointer-events-none"
           )}
-          onDragEnter={handleDragEnter}
-          onDragLeave={handleDragLeave}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
+          // Only enable drag events on non-touch devices
+          {...(!isTouchDevice && {
+            onDragEnter: handleDragEnter,
+            onDragLeave: handleDragLeave,
+            onDragOver: handleDragOver,
+            onDrop: handleDrop
+          })}
+          // Add touch events for better mobile support
+          onTouchStart={(e) => {
+            // Prevent default to avoid unwanted behaviors on touch
+            if (isTouchDevice) {
+              e.preventDefault();
+            }
+          }}
         >
           {/* Hidden file input */}
           <Input
@@ -116,42 +143,71 @@ export function FileUploader({
             aria-label="Select video file"
           />
 
-          <div className="flex flex-col items-center gap-4">
-            {isDragOver ? (
+          <div className={cn(
+            "flex flex-col items-center",
+            isMobile && isLandscape ? "gap-2" : "gap-3 sm:gap-4"
+          )}>
+            {isDragOver && !isTouchDevice ? (
               <>
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Upload className="w-8 h-8 text-primary" />
+                <div className="p-2 sm:p-3 rounded-full bg-primary/10">
+                  <Upload className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
                 </div>
                 <div>
-                  <p className="text-lg font-medium text-primary">
+                  <p className="text-base sm:text-lg font-medium text-primary">
                     Drop your video file here
                   </p>
-                  <p className="text-sm text-muted-foreground mt-1">
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                     Release to upload
                   </p>
                 </div>
               </>
             ) : (
               <>
-                <div className="p-3 rounded-full bg-muted">
-                  <FileVideo className="w-8 h-8 text-muted-foreground" />
+                <div className="p-2 sm:p-3 rounded-full bg-muted">
+                  {isTouchDevice ? (
+                    <Smartphone className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground" />
+                  ) : (
+                    <FileVideo className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground" />
+                  )}
                 </div>
-                <div>
-                  <p className="text-lg font-medium">
-                    {selectedFileName ? 'File Selected' : 'Select or drag a video file'}
+                <div className="space-y-1">
+                  <p className={cn(
+                    "font-medium",
+                    isMobile && isLandscape ? "text-sm" : "text-base sm:text-lg"
+                  )}>
+                    {selectedFileName ? 'File Selected' : (
+                      isTouchDevice ? 'Select a video file' : 'Select or drag a video file'
+                    )}
                   </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {selectedFileName || 'Supports MP4, WebM, OGG, FLV, WMV formats'}
+                  <p className="text-xs sm:text-sm text-muted-foreground px-2">
+                    {selectedFileName ? (
+                      <span className="break-all">{selectedFileName}</span>
+                    ) : (
+                      <>
+                        <span className="hidden sm:inline">Supports MP4, WebM, OGG, FLV, WMV formats</span>
+                        <span className="sm:hidden">Tap to select video file</span>
+                      </>
+                    )}
                   </p>
                 </div>
                 
-                <div className="flex gap-2">
+                <div className={cn(
+                  "flex gap-2 w-full sm:w-auto",
+                  isMobile && isLandscape ? "flex-row" : "flex-col sm:flex-row"
+                )}>
                   <Button 
                     onClick={handleBrowseClick}
                     disabled={isLoading}
                     variant="outline"
+                    size={isMobile && isLandscape ? "default" : "lg"}
+                    className="w-full sm:w-auto min-h-[44px] touch-manipulation" // Minimum touch target size
                   >
-                    {isLoading ? 'Processing...' : 'Browse Files'}
+                    {isLoading ? 'Processing...' : (
+                      <>
+                        <span className="sm:hidden">Select Video File</span>
+                        <span className="hidden sm:inline">Browse Files</span>
+                      </>
+                    )}
                   </Button>
                   
                   {selectedFileName && (
@@ -159,10 +215,13 @@ export function FileUploader({
                       onClick={handleClearFile}
                       disabled={isLoading}
                       variant="ghost"
-                      size="icon"
+                      size={isMobile && isLandscape ? "default" : "lg"}
+                      className="w-full sm:w-auto min-h-[44px] touch-manipulation"
                       aria-label="Clear selected file"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-4 h-4 sm:mr-2" />
+                      <span className="sm:hidden">Clear File</span>
+                      <span className="hidden sm:inline">Clear</span>
                     </Button>
                   )}
                 </div>
@@ -171,38 +230,41 @@ export function FileUploader({
           </div>
 
           {/* Loading overlay */}
-          {isLoading && (
-            <div className="absolute inset-0 bg-background/50 flex items-center justify-center rounded-lg">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm font-medium">Processing file...</span>
-              </div>
-            </div>
-          )}
+          <LoadingOverlay
+            isVisible={isLoading}
+            message="Processing file..."
+            className="rounded-lg"
+          />
         </div>
 
         {/* Error display */}
         {error && (
-          <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
-            <p className="text-sm text-destructive font-medium">
-              {error.message}
-            </p>
-            {error.code && (
-              <p className="text-xs text-destructive/80 mt-1">
-                Error code: {error.code}
-              </p>
-            )}
+          <div className="mt-4">
+            <ErrorDisplay
+              error={error}
+              compact={true}
+              onDismiss={() => {
+                // Clear file selection on error dismiss
+                setSelectedFileName(null);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+            />
           </div>
         )}
 
-        {/* Supported formats info */}
-        <div className="mt-4 text-xs text-muted-foreground">
+        {/* Supported formats info - hidden on mobile to save space */}
+        <div className="mt-4 text-xs text-muted-foreground hidden sm:block">
           <p className="font-medium mb-1">Supported formats:</p>
-          <p>
-            <span className="font-medium">Video.js:</span> MP4, WebM, OGG
-            {' • '}
-            <span className="font-medium">MediaElement.js:</span> FLV, WMV
-          </p>
+          <div className="flex flex-col sm:flex-row sm:gap-4 gap-1">
+            <span>
+              <span className="font-medium">Video.js:</span> MP4, WebM, OGG
+            </span>
+            <span>
+              <span className="font-medium">MediaElement.js:</span> FLV, WMV
+            </span>
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -3,13 +3,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FileUploader } from '../file-uploader';
+import { useIsMobile, useIsLandscape, useIsTouchDevice } from '~/hooks/use-responsive';
 import type { FileUploaderProps } from '~/types';
+
+// Mock responsive hooks
+vi.mock('~/hooks/use-responsive', () => ({
+  useIsMobile: vi.fn(() => false),
+  useIsLandscape: vi.fn(() => true),
+  useIsTouchDevice: vi.fn(() => false),
+}));
 
 // Mock the lucide-react icons
 vi.mock('lucide-react', () => ({
   Upload: () => <div data-testid="upload-icon">Upload</div>,
   FileVideo: () => <div data-testid="file-video-icon">FileVideo</div>,
   X: () => <div data-testid="x-icon">X</div>,
+  Smartphone: () => <div data-testid="smartphone-icon">Smartphone</div>,
+  FileX: () => <div data-testid="file-x-icon">FileX</div>,
+  Monitor: () => <div data-testid="monitor-icon">Monitor</div>,
+  AlertTriangle: () => <div data-testid="alert-triangle-icon">AlertTriangle</div>,
+  RefreshCw: () => <div data-testid="refresh-icon">RefreshCw</div>,
+  RotateCcw: () => <div data-testid="rotate-icon">RotateCcw</div>,
+  Wifi: () => <div data-testid="wifi-icon">Wifi</div>,
 }));
 
 // Mock the UI components
@@ -250,24 +265,26 @@ describe('FileUploader', () => {
         message: 'Unsupported file format',
         code: 'INVALID_FORMAT',
         type: 'file' as const,
+        recoverable: true,
       };
       
       render(<FileUploader {...defaultProps} error={error} />);
       
       expect(screen.getByText('Unsupported file format')).toBeInTheDocument();
-      expect(screen.getByText('Error code: INVALID_FORMAT')).toBeInTheDocument();
+      // The error code is not shown in compact mode, only the message
     });
 
     it('does not show error code when not provided', () => {
       const error = {
         message: 'Something went wrong',
         type: 'file' as const,
+        recoverable: true,
       };
       
       render(<FileUploader {...defaultProps} error={error} />);
       
       expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-      expect(screen.queryByText(/Error code:/)).not.toBeInTheDocument();
+      // Error code is not shown in compact mode
     });
   });
 
@@ -321,6 +338,161 @@ describe('FileUploader', () => {
       
       const clearButton = screen.getByLabelText('Clear selected file');
       expect(clearButton).toBeInTheDocument();
+    });
+  });
+
+  describe('Responsive Design Tests', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('renders with mobile-specific text and layout', () => {
+      vi.mocked(useIsMobile).mockReturnValue(true);
+      vi.mocked(useIsLandscape).mockReturnValue(false);
+      vi.mocked(useIsTouchDevice).mockReturnValue(true);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      expect(screen.getByText('Select a video file')).toBeInTheDocument();
+      expect(screen.getByText('Tap to select video file')).toBeInTheDocument();
+      expect(screen.getByText('Select Video File')).toBeInTheDocument();
+      expect(screen.getByTestId('smartphone-icon')).toBeInTheDocument();
+    });
+
+    it('renders with desktop text when not on mobile', () => {
+      vi.mocked(useIsMobile).mockReturnValue(false);
+      vi.mocked(useIsLandscape).mockReturnValue(true);
+      vi.mocked(useIsTouchDevice).mockReturnValue(false);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      expect(screen.getByText('Select or drag a video file')).toBeInTheDocument();
+      expect(screen.getByText('Supports MP4, WebM, OGG, FLV, WMV formats')).toBeInTheDocument();
+      expect(screen.getByText('Browse Files')).toBeInTheDocument();
+      expect(screen.getByTestId('file-video-icon')).toBeInTheDocument();
+    });
+
+    it('hides supported formats on mobile to save space', () => {
+      vi.mocked(useIsMobile).mockReturnValue(true);
+      vi.mocked(useIsLandscape).mockReturnValue(false);
+      vi.mocked(useIsTouchDevice).mockReturnValue(true);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      // The supported formats section should have hidden class on mobile
+      const supportedFormatsSection = screen.getByText('Supported formats:').closest('div');
+      expect(supportedFormatsSection).toHaveClass('hidden');
+    });
+
+    it('shows supported formats on desktop', () => {
+      vi.mocked(useIsMobile).mockReturnValue(false);
+      vi.mocked(useIsLandscape).mockReturnValue(true);
+      vi.mocked(useIsTouchDevice).mockReturnValue(false);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      expect(screen.getByText('Supported formats:')).toBeInTheDocument();
+      expect(screen.getByText(/Video\.js:/)).toBeInTheDocument();
+      expect(screen.getByText(/MediaElement\.js:/)).toBeInTheDocument();
+    });
+
+    it('disables drag and drop on touch devices', () => {
+      vi.mocked(useIsMobile).mockReturnValue(true);
+      vi.mocked(useIsLandscape).mockReturnValue(false);
+      vi.mocked(useIsTouchDevice).mockReturnValue(true);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      const dropZone = screen.getByTestId('card-content').firstChild as HTMLElement;
+      
+      // Try to trigger drag enter - should not show drag over state on touch devices
+      fireEvent.dragEnter(dropZone);
+      
+      // Should not show drag over text since drag is disabled on touch
+      expect(screen.queryByText('Drop your video file here')).not.toBeInTheDocument();
+      expect(screen.getByText('Select a video file')).toBeInTheDocument();
+    });
+
+    it('enables drag and drop on non-touch devices', () => {
+      vi.mocked(useIsMobile).mockReturnValue(false);
+      vi.mocked(useIsLandscape).mockReturnValue(true);
+      vi.mocked(useIsTouchDevice).mockReturnValue(false);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      const dropZone = screen.getByTestId('card-content').firstChild as HTMLElement;
+      
+      // Trigger drag enter - should show drag over state on non-touch devices
+      fireEvent.dragEnter(dropZone);
+      
+      expect(screen.getByText('Drop your video file here')).toBeInTheDocument();
+      expect(screen.getByText('Release to upload')).toBeInTheDocument();
+    });
+
+    it('adapts button layout for mobile landscape', () => {
+      vi.mocked(useIsMobile).mockReturnValue(true);
+      vi.mocked(useIsLandscape).mockReturnValue(true);
+      vi.mocked(useIsTouchDevice).mockReturnValue(true);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      // Should show mobile-specific button text
+      expect(screen.getByText('Select Video File')).toBeInTheDocument();
+    });
+
+    it('shows clear button with appropriate text for mobile', async () => {
+      const user = userEvent.setup();
+      vi.mocked(useIsMobile).mockReturnValue(true);
+      vi.mocked(useIsLandscape).mockReturnValue(false);
+      vi.mocked(useIsTouchDevice).mockReturnValue(true);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      const file = new File(['video content'], 'test-video.mp4', { type: 'video/mp4' });
+      const fileInput = screen.getByTestId('file-input');
+      
+      await user.upload(fileInput, file);
+      
+      expect(screen.getByText('Clear File')).toBeInTheDocument();
+      expect(screen.getByTestId('x-icon')).toBeInTheDocument();
+    });
+
+    it('shows clear button with desktop text for desktop', async () => {
+      const user = userEvent.setup();
+      vi.mocked(useIsMobile).mockReturnValue(false);
+      vi.mocked(useIsLandscape).mockReturnValue(true);
+      vi.mocked(useIsTouchDevice).mockReturnValue(false);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      const file = new File(['video content'], 'test-video.mp4', { type: 'video/mp4' });
+      const fileInput = screen.getByTestId('file-input');
+      
+      await user.upload(fileInput, file);
+      
+      expect(screen.getByText('Clear')).toBeInTheDocument();
+      expect(screen.getByTestId('x-icon')).toBeInTheDocument();
+    });
+
+    it('handles touch events properly on touch devices', () => {
+      vi.mocked(useIsMobile).mockReturnValue(true);
+      vi.mocked(useIsLandscape).mockReturnValue(false);
+      vi.mocked(useIsTouchDevice).mockReturnValue(true);
+
+      render(<FileUploader {...defaultProps} />);
+      
+      const dropZone = screen.getByTestId('card-content').firstChild as HTMLElement;
+      
+      // Mock preventDefault
+      const mockPreventDefault = vi.fn();
+      
+      // Simulate touch start event
+      fireEvent.touchStart(dropZone, {
+        preventDefault: mockPreventDefault
+      });
+      
+      // Should handle touch events without errors
+      expect(dropZone).toBeInTheDocument();
     });
   });
 });

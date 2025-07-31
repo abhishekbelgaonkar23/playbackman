@@ -9,11 +9,28 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { VideoPlayerApp } from '../video-player-app';
 import { fileDetectionService } from '~/services/file-detection.service';
 import { playerFactory } from '~/services/player-factory.service';
+import { useResponsive, useIsMobile, useIsLandscape, useIsTouchDevice } from '~/hooks/use-responsive';
 import type { ValidationResult, Player } from '~/types';
 
 // Mock the services
 vi.mock('~/services/file-detection.service');
 vi.mock('~/services/player-factory.service');
+
+// Mock responsive hooks
+vi.mock('~/hooks/use-responsive', () => ({
+  useResponsive: vi.fn(() => ({
+    width: 1024,
+    height: 768,
+    isMobile: false,
+    isTablet: false,
+    isDesktop: true,
+    orientation: 'landscape',
+    aspectRatio: 1.33
+  })),
+  useIsMobile: vi.fn(() => false),
+  useIsLandscape: vi.fn(() => true),
+  useIsTouchDevice: vi.fn(() => false),
+}));
 
 // Mock URL.createObjectURL and URL.revokeObjectURL
 const mockCreateObjectURL = vi.fn();
@@ -386,5 +403,80 @@ describe('VideoPlayerApp Integration Tests', () => {
     // Verify services were called correctly
     expect(mockCreateObjectURL).toHaveBeenCalledWith(mockFile);
     expect(fileDetectionService.getSupportedFormats).toHaveBeenCalled();
+  });
+
+  describe('Responsive Design Tests', () => {
+    it('renders responsive layout correctly', async () => {
+      render(<VideoPlayerApp />);
+      
+      // Verify basic responsive elements are present
+      expect(screen.getByText('Upload and play video files locally in your browser')).toBeInTheDocument();
+      expect(screen.getByText('Select or drag a video file')).toBeInTheDocument();
+    });
+
+    it('uses responsive hooks for layout adaptation', async () => {
+      // Verify that responsive hooks are called
+      render(<VideoPlayerApp />);
+      
+      expect(useResponsive).toHaveBeenCalled();
+      expect(useIsMobile).toHaveBeenCalled();
+      expect(useIsLandscape).toHaveBeenCalled();
+    });
+  });
+
+  describe('Theme Integration Tests', () => {
+    it('renders with proper theme-aware styling', async () => {
+      render(<VideoPlayerApp />);
+      
+      // Verify that the component renders with theme-aware classes
+      const container = screen.getByText('Upload and play video files locally in your browser').closest('div');
+      expect(container).toBeInTheDocument();
+      
+      // The component should use theme-aware background and text colors
+      expect(container).toHaveClass('space-y-2');
+    });
+
+    it('displays file information with theme-aware card styling', async () => {
+      // Mock successful validation
+      const mockValidationResult: ValidationResult = {
+        isValid: true,
+        playerType: 'videojs'
+      };
+      vi.mocked(fileDetectionService.validateFile).mockReturnValue(mockValidationResult);
+
+      render(<VideoPlayerApp />);
+
+      const mockFile = new File(['video content'], 'theme-test.mp4', {
+        type: 'video/mp4',
+        lastModified: Date.now()
+      });
+
+      const fileInput = screen.getByLabelText('Select video file');
+      fireEvent.change(fileInput, { target: { files: [mockFile] } });
+
+      // Wait for file processing
+      await waitFor(() => {
+        expect(screen.getByText('Now Playing')).toBeInTheDocument();
+      });
+
+      // Verify theme-aware file information display
+      expect(screen.getByText('Now Playing')).toBeInTheDocument();
+      expect(screen.getByText('theme-test.mp4')).toBeInTheDocument();
+      
+      // Check for theme-aware styling classes
+      const fileInfoCard = screen.getByText('Now Playing').closest('div');
+      expect(fileInfoCard).toHaveClass('bg-card', 'border', 'rounded-lg');
+    });
+
+    it('maintains consistent theme styling across components', async () => {
+      render(<VideoPlayerApp />);
+      
+      // Verify consistent theme classes are applied
+      const mainContainer = screen.getByText('Upload and play video files locally in your browser').closest('div');
+      expect(mainContainer).toBeInTheDocument();
+      
+      // Should use consistent spacing and theme-aware colors
+      expect(mainContainer?.parentElement).toHaveClass('space-y-4');
+    });
   });
 });

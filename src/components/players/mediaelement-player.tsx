@@ -323,10 +323,10 @@ export default function MediaElementPlayer({
   }, [cleanup]);
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full aspect-video max-w-full">
       <video
         ref={videoRef}
-        className="w-full h-auto max-h-[70vh]"
+        className="w-full h-full object-contain"
         controls
         preload="metadata"
         playsInline
