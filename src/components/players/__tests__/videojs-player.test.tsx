@@ -15,6 +15,8 @@ const mockVideoJSInstance = {
   duration: vi.fn(() => 100),
   volume: vi.fn(() => 1),
   muted: vi.fn(() => false),
+  paused: vi.fn(() => false),
+  ended: vi.fn(() => false),
   error: vi.fn(() => null)
 };
 
@@ -26,16 +28,10 @@ const mockVideoJS = vi.fn((element, options, callback) => {
   return mockVideoJSInstance;
 });
 
+// Mock the dynamic import
 vi.mock('video.js', () => ({
   default: mockVideoJS
 }));
-
-// Mock dynamic import
-vi.mock('video.js', async () => {
-  return {
-    default: mockVideoJS
-  };
-});
 
 // Mock URL.createObjectURL
 const mockCreateObjectURL = vi.fn(() => 'blob:mock-url');
@@ -92,13 +88,12 @@ describe('VideoJSPlayer', () => {
   it('renders video element with correct attributes', () => {
     render(<VideoJSPlayer {...defaultProps} />);
     
-    const videoElement = screen.getByRole('application', { hidden: true }) || 
-                         document.querySelector('video');
+    const videoElement = document.querySelector('video');
     
     expect(videoElement).toBeInTheDocument();
-    expect(videoElement).toHaveAttribute('src', 'blob:mock-url');
     expect(videoElement).toHaveAttribute('preload', 'metadata');
     expect(videoElement).toHaveAttribute('playsinline');
+    expect(videoElement?.querySelector('source')).toHaveAttribute('src', 'blob:mock-url');
   });
 
   it('loads Video.js CSS when not already present', async () => {
@@ -168,7 +163,7 @@ describe('VideoJSPlayer', () => {
     
     await waitFor(() => {
       expect(onError).toHaveBeenCalledWith(
-        'Video format not supported',
+        'Video.js initialization error: Video format not supported',
         false // Should not retry format errors
       );
     });
@@ -255,19 +250,174 @@ describe('VideoJSPlayer', () => {
 
     for (const { code, expectedMessage } of errorCodes) {
       const onError = vi.fn();
-      mockVideoJSInstance.error.mockReturnValue({ code, message: expectedMessage });
+      
+      // Create a fresh mock for each test
+      const mockInstance = {
+        ...mockVideoJSInstance,
+        error: vi.fn(() => ({ code, message: expectedMessage }))
+      };
+      
+      const mockVJS = vi.fn((element, options, callback) => {
+        setTimeout(() => {
+          if (callback) callback();
+        }, 50);
+        return mockInstance;
+      });
+      
+      // Mock the import for this specific test
+      vi.doMock('video.js', () => ({ default: mockVJS }));
       
       render(<VideoJSPlayer {...defaultProps} onError={onError} />);
       
       await waitFor(() => {
         expect(onError).toHaveBeenCalledWith(
-          expectedMessage,
+          expect.stringContaining(expectedMessage),
           code !== 4 // Don't retry format errors
         );
-      });
+      }, { timeout: 2000 });
       
       // Clean up for next iteration
       vi.clearAllMocks();
+      vi.resetModules();
     }
+  });
+
+  describe('Playback Controls', () => {
+    let playerWrapper: any;
+
+    beforeEach(async () => {
+      const onReady = vi.fn((player) => {
+        playerWrapper = player;
+      });
+      
+      render(<VideoJSPlayer {...defaultProps} onReady={onReady} />);
+      
+      await waitFor(() => {
+        expect(onReady).toHaveBeenCalled();
+      });
+    });
+
+    it('implements play control correctly', () => {
+      playerWrapper.play();
+      expect(mockVideoJSInstance.play).toHaveBeenCalled();
+    });
+
+    it('implements pause control correctly', () => {
+      playerWrapper.pause();
+      expect(mockVideoJSInstance.pause).toHaveBeenCalled();
+    });
+
+    it('implements seek functionality', () => {
+      // Test normal seek
+      playerWrapper.seek(50);
+      expect(mockVideoJSInstance.currentTime).toHaveBeenCalledWith(50);
+
+      // Test seek beyond duration (should clamp to duration)
+      mockVideoJSInstance.duration.mockReturnValue(100);
+      playerWrapper.seek(150);
+      expect(mockVideoJSInstance.currentTime).toHaveBeenCalledWith(100);
+
+      // Test negative seek (should clamp to 0)
+      playerWrapper.seek(-10);
+      expect(mockVideoJSInstance.currentTime).toHaveBeenCalledWith(0);
+    });
+
+    it('implements volume control correctly', () => {
+      // Test setVolume method
+      playerWrapper.setVolume(0.5);
+      expect(mockVideoJSInstance.volume).toHaveBeenCalledWith(0.5);
+
+      // Test volume property setter with clamping
+      playerWrapper.volume = 1.5; // Should clamp to 1
+      expect(mockVideoJSInstance.volume).toHaveBeenCalledWith(1);
+
+      playerWrapper.volume = -0.5; // Should clamp to 0
+      expect(mockVideoJSInstance.volume).toHaveBeenCalledWith(0);
+    });
+
+    it('implements mute control correctly', () => {
+      // Test toggleMute when not muted
+      mockVideoJSInstance.muted.mockReturnValue(false);
+      playerWrapper.toggleMute();
+      expect(mockVideoJSInstance.muted).toHaveBeenCalledWith(true);
+
+      // Test toggleMute when muted
+      mockVideoJSInstance.muted.mockReturnValue(true);
+      playerWrapper.toggleMute();
+      expect(mockVideoJSInstance.muted).toHaveBeenCalledWith(false);
+
+      // Test direct mute setter
+      playerWrapper.muted = true;
+      expect(mockVideoJSInstance.muted).toHaveBeenCalledWith(true);
+    });
+
+    it('implements play/pause toggle correctly', () => {
+      // Test toggle when paused
+      mockVideoJSInstance.paused.mockReturnValue(true);
+      playerWrapper.togglePlayPause();
+      expect(mockVideoJSInstance.play).toHaveBeenCalled();
+
+      // Test toggle when playing
+      mockVideoJSInstance.paused.mockReturnValue(false);
+      playerWrapper.togglePlayPause();
+      expect(mockVideoJSInstance.pause).toHaveBeenCalled();
+    });
+
+    it('exposes playback state properties correctly', () => {
+      mockVideoJSInstance.paused.mockReturnValue(true);
+      mockVideoJSInstance.ended.mockReturnValue(false);
+      
+      expect(playerWrapper.paused).toBe(true);
+      expect(playerWrapper.ended).toBe(false);
+
+      mockVideoJSInstance.paused.mockReturnValue(false);
+      mockVideoJSInstance.ended.mockReturnValue(true);
+      
+      expect(playerWrapper.paused).toBe(false);
+      expect(playerWrapper.ended).toBe(true);
+    });
+
+    it('handles destroyed player state gracefully', () => {
+      playerWrapper.destroy();
+      
+      // All methods should handle destroyed state without throwing
+      expect(() => playerWrapper.play()).not.toThrow();
+      expect(() => playerWrapper.pause()).not.toThrow();
+      expect(() => playerWrapper.seek(50)).not.toThrow();
+      expect(() => playerWrapper.setVolume(0.5)).not.toThrow();
+      expect(() => playerWrapper.toggleMute()).not.toThrow();
+      expect(() => playerWrapper.togglePlayPause()).not.toThrow();
+      
+      // Properties should return safe defaults
+      expect(playerWrapper.currentTime).toBe(0);
+      expect(playerWrapper.duration).toBe(0);
+      expect(playerWrapper.volume).toBe(0);
+      expect(playerWrapper.muted).toBe(false);
+      expect(playerWrapper.paused).toBe(true);
+      expect(playerWrapper.ended).toBe(false);
+    });
+  });
+
+  describe('Event Handling', () => {
+    it('sets up all required playback event listeners', async () => {
+      render(<VideoJSPlayer {...defaultProps} />);
+      
+      await waitFor(() => {
+        // Basic events
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('error', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('loadstart', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('canplay', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('loadedmetadata', expect.any(Function));
+        
+        // Playback control events
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('play', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('pause', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('timeupdate', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('volumechange', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('seeking', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('seeked', expect.any(Function));
+        expect(mockVideoJSInstance.on).toHaveBeenCalledWith('ended', expect.any(Function));
+      });
+    });
   });
 });

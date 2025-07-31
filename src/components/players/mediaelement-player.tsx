@@ -23,6 +23,7 @@ class MediaElementPlayerWrapper implements Player {
     this.domNode = domNode;
   }
 
+  // Basic playback controls
   play(): void {
     if (!this.isDestroyed && this.mediaElementInstance) {
       this.mediaElementInstance.play().catch(error => {
@@ -72,6 +73,7 @@ class MediaElementPlayerWrapper implements Player {
     }
   }
 
+  // Time controls
   get currentTime(): number {
     return (!this.isDestroyed && this.mediaElementInstance) ? this.mediaElementInstance.currentTime : 0;
   }
@@ -83,9 +85,11 @@ class MediaElementPlayerWrapper implements Player {
   }
 
   get duration(): number {
-    return (!this.isDestroyed && this.mediaElementInstance) ? this.mediaElementInstance.duration : 0;
+    return (!this.isDestroyed && this.mediaElementInstance) ? 
+      (isNaN(this.mediaElementInstance.duration) ? 0 : this.mediaElementInstance.duration) : 0;
   }
 
+  // Audio controls
   get volume(): number {
     return (!this.isDestroyed && this.mediaElementInstance) ? this.mediaElementInstance.volume : 0;
   }
@@ -103,6 +107,40 @@ class MediaElementPlayerWrapper implements Player {
   set muted(mute: boolean) {
     if (!this.isDestroyed && this.mediaElementInstance) {
       this.mediaElementInstance.muted = mute;
+    }
+  }
+
+  // Playback state
+  get paused(): boolean {
+    return (!this.isDestroyed && this.mediaElementInstance) ? this.mediaElementInstance.paused : true;
+  }
+
+  get ended(): boolean {
+    return (!this.isDestroyed && this.mediaElementInstance) ? this.mediaElementInstance.ended : false;
+  }
+
+  // Additional control methods
+  seek(time: number): void {
+    if (!this.isDestroyed && this.mediaElementInstance) {
+      const duration = this.duration;
+      const seekTime = Math.max(0, Math.min(duration, time));
+      this.mediaElementInstance.currentTime = seekTime;
+    }
+  }
+
+  setVolume(volume: number): void {
+    this.volume = volume;
+  }
+
+  toggleMute(): void {
+    this.muted = !this.muted;
+  }
+
+  togglePlayPause(): void {
+    if (this.paused) {
+      this.play();
+    } else {
+      this.pause();
     }
   }
 }
@@ -146,8 +184,11 @@ export default function MediaElementPlayer({
       videoElement.src = fileUrl;
       videoElement.controls = true;
 
-      // Prepare MediaElement.js options
+      // Prepare MediaElement.js options with controls enabled
       const playerOptions: MediaElementOptions = {
+        controls: true,
+        enableAutosize: true,
+        features: ['playpause', 'progress', 'current', 'duration', 'tracks', 'volume', 'fullscreen'],
         ...options,
         success: (mediaElement: HTMLMediaElement, domNode: HTMLElement) => {
           const playerWrapper = new MediaElementPlayerWrapper(mediaElement, domNode);
@@ -180,7 +221,7 @@ export default function MediaElementPlayer({
             onError(errorMessage, target.error?.code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED);
           });
 
-          // Set up other event listeners
+          // Set up playback event listeners for real-time responsiveness
           mediaElement.addEventListener('loadstart', () => {
             console.log('MediaElement.js: Load started');
           });
@@ -191,6 +232,36 @@ export default function MediaElementPlayer({
 
           mediaElement.addEventListener('loadedmetadata', () => {
             console.log('MediaElement.js: Metadata loaded');
+          });
+
+          // Playback control events
+          mediaElement.addEventListener('play', () => {
+            console.log('MediaElement.js: Play started');
+          });
+
+          mediaElement.addEventListener('pause', () => {
+            console.log('MediaElement.js: Paused');
+          });
+
+          mediaElement.addEventListener('timeupdate', () => {
+            // Real-time time updates for seek responsiveness
+            // This ensures UI components can sync with playback position
+          });
+
+          mediaElement.addEventListener('volumechange', () => {
+            console.log('MediaElement.js: Volume changed');
+          });
+
+          mediaElement.addEventListener('seeking', () => {
+            console.log('MediaElement.js: Seeking');
+          });
+
+          mediaElement.addEventListener('seeked', () => {
+            console.log('MediaElement.js: Seek completed');
+          });
+
+          mediaElement.addEventListener('ended', () => {
+            console.log('MediaElement.js: Playback ended');
           });
 
           // Call original success callback if provided

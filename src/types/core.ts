@@ -52,14 +52,29 @@ export interface AppState {
 
 // Generic player interface
 export interface Player {
+  // Basic playback controls
   play(): void;
   pause(): void;
   destroy(): void;
   on(event: string, callback: Function): void;
-  currentTime?: number;
-  duration?: number;
-  volume?: number;
-  muted?: boolean;
+  
+  // Time controls (required for seek functionality)
+  currentTime: number;
+  duration: number;
+  
+  // Audio controls (required for volume/mute functionality)
+  volume: number;
+  muted: boolean;
+  
+  // Playback state
+  paused: boolean;
+  ended: boolean;
+  
+  // Additional control methods
+  seek(time: number): void;
+  setVolume(volume: number): void;
+  toggleMute(): void;
+  togglePlayPause(): void;
 }
 
 // File detection service interface

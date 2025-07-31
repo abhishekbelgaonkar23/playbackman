@@ -21,6 +21,7 @@ class VideoJSPlayerWrapper implements Player {
     this.videoJSInstance = videoJSInstance;
   }
 
+  // Basic playback controls
   play(): void {
     if (!this.isDestroyed && this.videoJSInstance) {
       this.videoJSInstance.play();
@@ -51,6 +52,7 @@ class VideoJSPlayerWrapper implements Player {
     }
   }
 
+  // Time controls
   get currentTime(): number {
     return (!this.isDestroyed && this.videoJSInstance) ? this.videoJSInstance.currentTime() : 0;
   }
@@ -65,13 +67,14 @@ class VideoJSPlayerWrapper implements Player {
     return (!this.isDestroyed && this.videoJSInstance) ? this.videoJSInstance.duration() : 0;
   }
 
+  // Audio controls
   get volume(): number {
     return (!this.isDestroyed && this.videoJSInstance) ? this.videoJSInstance.volume() : 0;
   }
 
   set volume(vol: number) {
     if (!this.isDestroyed && this.videoJSInstance) {
-      this.videoJSInstance.volume(vol);
+      this.videoJSInstance.volume(Math.max(0, Math.min(1, vol)));
     }
   }
 
@@ -82,6 +85,40 @@ class VideoJSPlayerWrapper implements Player {
   set muted(mute: boolean) {
     if (!this.isDestroyed && this.videoJSInstance) {
       this.videoJSInstance.muted(mute);
+    }
+  }
+
+  // Playback state
+  get paused(): boolean {
+    return (!this.isDestroyed && this.videoJSInstance) ? this.videoJSInstance.paused() : true;
+  }
+
+  get ended(): boolean {
+    return (!this.isDestroyed && this.videoJSInstance) ? this.videoJSInstance.ended() : false;
+  }
+
+  // Additional control methods
+  seek(time: number): void {
+    if (!this.isDestroyed && this.videoJSInstance) {
+      const duration = this.duration;
+      const seekTime = Math.max(0, Math.min(duration, time));
+      this.videoJSInstance.currentTime(seekTime);
+    }
+  }
+
+  setVolume(volume: number): void {
+    this.volume = volume;
+  }
+
+  toggleMute(): void {
+    this.muted = !this.muted;
+  }
+
+  togglePlayPause(): void {
+    if (this.paused) {
+      this.play();
+    } else {
+      this.pause();
     }
   }
 }
@@ -126,8 +163,12 @@ export default function VideoJSPlayer({
       videoElement.src = fileUrl;
       videoElement.className = 'video-js vjs-default-skin w-full h-auto';
 
-      // Prepare Video.js options
+      // Prepare Video.js options with controls enabled
       const playerOptions: VideoJSOptions = {
+        controls: true,
+        responsive: true,
+        fluid: true,
+        playbackRates: [0.5, 1, 1.25, 1.5, 2],
         ...options,
         sources: [{
           src: fileUrl,
@@ -167,7 +208,7 @@ export default function VideoJSPlayer({
           onError(errorMessage, errorObj?.code !== 4); // Don't retry format errors
         });
 
-        // Set up other event listeners
+        // Set up playback event listeners for real-time responsiveness
         videoJSInstance.on('loadstart', () => {
           console.log('Video.js: Load started');
         });
@@ -178,6 +219,36 @@ export default function VideoJSPlayer({
 
         videoJSInstance.on('loadedmetadata', () => {
           console.log('Video.js: Metadata loaded');
+        });
+
+        // Playback control events
+        videoJSInstance.on('play', () => {
+          console.log('Video.js: Play started');
+        });
+
+        videoJSInstance.on('pause', () => {
+          console.log('Video.js: Paused');
+        });
+
+        videoJSInstance.on('timeupdate', () => {
+          // Real-time time updates for seek responsiveness
+          // This ensures UI components can sync with playback position
+        });
+
+        videoJSInstance.on('volumechange', () => {
+          console.log('Video.js: Volume changed');
+        });
+
+        videoJSInstance.on('seeking', () => {
+          console.log('Video.js: Seeking');
+        });
+
+        videoJSInstance.on('seeked', () => {
+          console.log('Video.js: Seek completed');
+        });
+
+        videoJSInstance.on('ended', () => {
+          console.log('Video.js: Playback ended');
         });
 
         onReady(playerWrapper);
@@ -236,6 +307,7 @@ export default function VideoJSPlayer({
         controls={false} // Video.js will handle controls
         preload="metadata"
         playsInline
+        data-setup="{}"
       >
         <source src={fileUrl} type={file.type || 'video/mp4'} />
         Your browser does not support the video tag.

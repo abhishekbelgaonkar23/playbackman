@@ -14,6 +14,8 @@ const mockMediaElementInstance = {
   duration: 100,
   volume: 1,
   muted: false,
+  paused: false,
+  ended: false,
   src: '',
   load: vi.fn(),
   error: null
@@ -373,5 +375,152 @@ describe('MediaElementPlayer', () => {
     
     playerWrapper.volume = 0.7; // Within bounds
     expect(mockMediaElementInstance.volume).toBe(0.7);
+  });
+
+  describe('Playback Controls', () => {
+    let playerWrapper: any;
+
+    beforeEach(async () => {
+      const onReady = vi.fn((player) => {
+        playerWrapper = player;
+      });
+      
+      render(<MediaElementPlayer {...defaultProps} onReady={onReady} />);
+      
+      await waitFor(() => {
+        expect(onReady).toHaveBeenCalled();
+      });
+    });
+
+    it('implements play control correctly', () => {
+      playerWrapper.play();
+      expect(mockMediaElementInstance.play).toHaveBeenCalled();
+    });
+
+    it('implements pause control correctly', () => {
+      playerWrapper.pause();
+      expect(mockMediaElementInstance.pause).toHaveBeenCalled();
+    });
+
+    it('implements seek functionality', () => {
+      // Test normal seek
+      playerWrapper.seek(50);
+      expect(mockMediaElementInstance.currentTime).toBe(50);
+
+      // Test seek beyond duration (should clamp to duration)
+      mockMediaElementInstance.duration = 100;
+      playerWrapper.seek(150);
+      expect(mockMediaElementInstance.currentTime).toBe(100);
+
+      // Test negative seek (should clamp to 0)
+      playerWrapper.seek(-10);
+      expect(mockMediaElementInstance.currentTime).toBe(0);
+    });
+
+    it('implements volume control correctly', () => {
+      // Test setVolume method
+      playerWrapper.setVolume(0.5);
+      expect(mockMediaElementInstance.volume).toBe(0.5);
+
+      // Test volume property setter with clamping
+      playerWrapper.volume = 1.5; // Should clamp to 1
+      expect(mockMediaElementInstance.volume).toBe(1);
+
+      playerWrapper.volume = -0.5; // Should clamp to 0
+      expect(mockMediaElementInstance.volume).toBe(0);
+    });
+
+    it('implements mute control correctly', () => {
+      // Test toggleMute when not muted
+      mockMediaElementInstance.muted = false;
+      playerWrapper.toggleMute();
+      expect(mockMediaElementInstance.muted).toBe(true);
+
+      // Test toggleMute when muted
+      mockMediaElementInstance.muted = true;
+      playerWrapper.toggleMute();
+      expect(mockMediaElementInstance.muted).toBe(false);
+
+      // Test direct mute setter
+      playerWrapper.muted = true;
+      expect(mockMediaElementInstance.muted).toBe(true);
+    });
+
+    it('implements play/pause toggle correctly', () => {
+      // Test toggle when paused
+      mockMediaElementInstance.paused = true;
+      playerWrapper.togglePlayPause();
+      expect(mockMediaElementInstance.play).toHaveBeenCalled();
+
+      // Test toggle when playing
+      mockMediaElementInstance.paused = false;
+      playerWrapper.togglePlayPause();
+      expect(mockMediaElementInstance.pause).toHaveBeenCalled();
+    });
+
+    it('exposes playback state properties correctly', () => {
+      mockMediaElementInstance.paused = true;
+      mockMediaElementInstance.ended = false;
+      
+      expect(playerWrapper.paused).toBe(true);
+      expect(playerWrapper.ended).toBe(false);
+
+      mockMediaElementInstance.paused = false;
+      mockMediaElementInstance.ended = true;
+      
+      expect(playerWrapper.paused).toBe(false);
+      expect(playerWrapper.ended).toBe(true);
+    });
+
+    it('handles NaN duration correctly', () => {
+      mockMediaElementInstance.duration = NaN;
+      expect(playerWrapper.duration).toBe(0);
+      
+      mockMediaElementInstance.duration = 100;
+      expect(playerWrapper.duration).toBe(100);
+    });
+
+    it('handles destroyed player state gracefully', () => {
+      playerWrapper.destroy();
+      
+      // All methods should handle destroyed state without throwing
+      expect(() => playerWrapper.play()).not.toThrow();
+      expect(() => playerWrapper.pause()).not.toThrow();
+      expect(() => playerWrapper.seek(50)).not.toThrow();
+      expect(() => playerWrapper.setVolume(0.5)).not.toThrow();
+      expect(() => playerWrapper.toggleMute()).not.toThrow();
+      expect(() => playerWrapper.togglePlayPause()).not.toThrow();
+      
+      // Properties should return safe defaults
+      expect(playerWrapper.currentTime).toBe(0);
+      expect(playerWrapper.duration).toBe(0);
+      expect(playerWrapper.volume).toBe(0);
+      expect(playerWrapper.muted).toBe(false);
+      expect(playerWrapper.paused).toBe(true);
+      expect(playerWrapper.ended).toBe(false);
+    });
+  });
+
+  describe('Event Handling', () => {
+    it('sets up all required playback event listeners', async () => {
+      render(<MediaElementPlayer {...defaultProps} />);
+      
+      await waitFor(() => {
+        // Basic events
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('error', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('loadstart', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('canplay', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('loadedmetadata', expect.any(Function));
+        
+        // Playback control events
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('play', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('pause', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('timeupdate', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('volumechange', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('seeking', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('seeked', expect.any(Function));
+        expect(mockMediaElementInstance.addEventListener).toHaveBeenCalledWith('ended', expect.any(Function));
+      });
+    });
   });
 });
