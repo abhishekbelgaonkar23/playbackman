@@ -1,15 +1,14 @@
 "use client";
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { FileUploader } from './file-uploader';
+import { PlayerContainer } from './player-container';
 import { fileDetectionService } from '~/services/file-detection.service';
-import { playerFactory } from '~/services/player-factory.service';
 import { cn } from '~/lib/utils';
 import type { 
   VideoPlayerAppProps, 
   AppState, 
   FileInfo, 
-  Player, 
   PlayerType,
   AppError 
 } from '~/types';
@@ -29,8 +28,7 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
     theme: 'system'
   });
 
-  // Refs for player container
-  const playerContainerRef = useRef<HTMLDivElement>(null);
+
 
   // Get supported formats for file uploader
   const supportedFormats = fileDetectionService.getSupportedFormats();
@@ -103,8 +101,11 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
         isPlayerReady: false
       }));
 
-      // Initialize player
-      await initializePlayer(file, playerType, fileInfo);
+      // File processing complete - PlayerContainer will handle player initialization
+      setState(prev => ({ 
+        ...prev, 
+        isLoading: false
+      }));
 
     } catch (error) {
       const appError: AppError = {
@@ -127,113 +128,27 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
   }, [createFileInfo]);
 
   /**
-   * Initializes the appropriate player based on file type
+   * Handles player ready event from PlayerContainer
    */
-  const initializePlayer = useCallback(async (file: File, playerType: PlayerType, fileInfo: FileInfo) => {
-    if (!playerContainerRef.current) {
-      const error: AppError = {
-        type: 'player',
-        message: 'Player container not available',
-        code: ERROR_CODES.PLAYER_INIT_FAILED,
-        recoverable: true,
-        suggestions: ['Try refreshing the page'],
-        playerType
-      };
-      
-      setState(prev => ({ 
-        ...prev, 
-        error, 
-        isLoading: false 
-      }));
-      return;
-    }
+  const handlePlayerReady = useCallback(() => {
+    setState(prev => ({ 
+      ...prev, 
+      isPlayerReady: true,
+      isLoading: false
+    }));
+  }, []);
 
-    try {
-      // Clean up existing player
-      if (state.currentPlayer) {
-        playerFactory.destroyPlayer(state.currentPlayer);
-      }
-
-      // Clear container
-      playerContainerRef.current.innerHTML = '';
-
-      // Create video element
-      const videoElement = document.createElement('video');
-      videoElement.src = fileInfo.url!;
-      videoElement.className = 'w-full h-auto max-h-[70vh] rounded-lg';
-      playerContainerRef.current.appendChild(videoElement);
-
-      // Player options based on type
-      const playerOptions = playerType === 'videojs' 
-        ? {
-            controls: true,
-            responsive: true,
-            fluid: true,
-            playbackRates: [0.5, 1, 1.25, 1.5, 2],
-            preload: 'metadata'
-          }
-        : {
-            controls: true,
-            enableAutosize: true,
-            features: ['playpause', 'progress', 'current', 'duration', 'tracks', 'volume', 'fullscreen'],
-            stretching: 'responsive'
-          };
-
-      // Create player instance
-      const player = await playerFactory.createPlayer(playerType, videoElement, playerOptions);
-
-      // Set up player event listeners
-      player.on('ready', () => {
-        setState(prev => ({ 
-          ...prev, 
-          isPlayerReady: true, 
-          isLoading: false 
-        }));
-      });
-
-      player.on('error', (error: any) => {
-        const appError: AppError = {
-          type: 'playback',
-          message: 'Video playback error occurred',
-          code: ERROR_CODES.MEDIA_ERR_DECODE,
-          recoverable: true,
-          suggestions: ['Try selecting a different video file'],
-          playerType
-        };
-
-        setState(prev => ({ 
-          ...prev, 
-          error: appError, 
-          isLoading: false 
-        }));
-      });
-
-      // Update state with new player
-      setState(prev => ({ 
-        ...prev, 
-        currentPlayer: player,
-        isLoading: false
-      }));
-
-    } catch (error) {
-      const appError: AppError = {
-        type: 'player',
-        message: error instanceof Error ? error.message : 'Failed to initialize player',
-        code: ERROR_CODES.PLAYER_INIT_FAILED,
-        recoverable: true,
-        suggestions: ['Try refreshing the page and selecting the file again'],
-        playerType
-      };
-
-      setState(prev => ({ 
-        ...prev, 
-        error: appError, 
-        isLoading: false,
-        currentPlayer: null,
-        isPlayerReady: false
-      }));
-    }
-  }, [state.currentPlayer]);
+  /**
+   * Handles player errors from PlayerContainer
+   */
+  const handlePlayerError = useCallback((error: AppError) => {
+    setState(prev => ({ 
+      ...prev, 
+      error,
+      isLoading: false,
+      isPlayerReady: false
+    }));
+  }, []);
 
   /**
    * Clears current error state
@@ -247,17 +162,12 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
    */
   useEffect(() => {
     return () => {
-      // Clean up player on unmount
-      if (state.currentPlayer) {
-        playerFactory.destroyPlayer(state.currentPlayer);
-      }
-      
       // Clean up object URLs
       if (state.fileInfo?.url) {
         URL.revokeObjectURL(state.fileInfo.url);
       }
     };
-  }, [state.currentPlayer, state.fileInfo?.url]);
+  }, [state.fileInfo?.url]);
 
   return (
     <div className={cn("w-full max-w-6xl mx-auto p-4 space-y-6", className)}>
@@ -297,19 +207,13 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
           </div>
 
           {/* Video Player */}
-          <div className="bg-black rounded-lg overflow-hidden">
-            <div 
-              ref={playerContainerRef}
-              className="min-h-[300px] flex items-center justify-center"
-            >
-              {state.isLoading && (
-                <div className="text-white text-center">
-                  <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                  <p>Loading player...</p>
-                </div>
-              )}
-            </div>
-          </div>
+          <PlayerContainer
+            file={state.selectedFile!}
+            playerType={state.playerType!}
+            onReady={handlePlayerReady}
+            onError={handlePlayerError}
+            className="min-h-[300px]"
+          />
 
           {/* Player Status */}
           {state.isPlayerReady && (
