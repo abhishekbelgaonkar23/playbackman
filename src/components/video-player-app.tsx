@@ -7,6 +7,7 @@ import { ErrorBoundary } from './error-boundary';
 import { ErrorDisplay } from './error-display';
 import { LoadingState } from './ui/spinner';
 import { fileDetectionService } from '~/services/file-detection.service';
+import { privacySecurityService } from '~/services/privacy-security.service';
 import { useResponsive, useIsMobile, useIsLandscape } from '~/hooks/use-responsive';
 import { cn } from '~/lib/utils';
 import type { 
@@ -47,17 +48,27 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
   ].map(ext => `.${ext}`);
 
   /**
-   * Creates file info object from File
+   * Creates file info object from File with secure Object URL
    */
   const createFileInfo = useCallback((file: File): FileInfo => {
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
+    
+    // Use privacy security service to create secure Object URL
+    let url: string;
+    try {
+      url = privacySecurityService.createSecureObjectUrl(file);
+    } catch (error) {
+      console.error('Failed to create secure Object URL:', error);
+      throw new Error('Failed to process file for security reasons');
+    }
+    
     return {
       name: file.name,
       size: file.size,
       type: file.type,
       extension,
       lastModified: file.lastModified,
-      url: URL.createObjectURL(file)
+      url
     };
   }, []);
 
@@ -167,16 +178,36 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
   }, []);
 
   /**
-   * Cleanup on unmount
+   * Cleanup on unmount and file changes
    */
   useEffect(() => {
     return () => {
-      // Clean up object URLs
+      // Clean up object URLs using privacy security service
       if (state.fileInfo?.url) {
-        URL.revokeObjectURL(state.fileInfo.url);
+        privacySecurityService.revokeSecureObjectUrl(state.fileInfo.url);
       }
     };
   }, [state.fileInfo?.url]);
+
+  /**
+   * Global cleanup on app unmount
+   */
+  useEffect(() => {
+    // Verify client-side only operation on mount
+    if (!privacySecurityService.verifyClientSideOnly()) {
+      console.error('[Privacy] Application is not running in client-side only mode!');
+    }
+
+    // Verify offline capability
+    if (!privacySecurityService.verifyOfflineCapability()) {
+      console.warn('[Privacy] Application may not work properly offline');
+    }
+
+    return () => {
+      // Cleanup all Object URLs on app unmount
+      privacySecurityService.revokeAllObjectUrls();
+    };
+  }, []);
 
   return (
     <ErrorBoundary>
@@ -275,8 +306,10 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
 
             {/* Player Status with fade-in animation */}
             {state.isPlayerReady && (
-              <div className="text-center text-xs sm:text-sm text-muted-foreground animate-in fade-in duration-500 bg-muted/30 rounded-full px-3 py-1 inline-block">
-                ✓ Player ready and loaded
+              <div className="flex justify-center">
+                <div className="text-xs sm:text-sm text-muted-foreground animate-in fade-in duration-500 bg-muted/30 rounded-full px-3 py-1">
+                  ✓ Player ready and loaded
+                </div>
               </div>
             )}
           </div>

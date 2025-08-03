@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { LoadingState, LoadingOverlay } from '~/components/ui/spinner';
 import { ErrorDisplay, PlayerInitError } from '~/components/error-display';
+import { privacySecurityService } from '~/services/privacy-security.service';
 import type { PlayerContainerProps, Player, PlayerType } from '~/types';
 import type { VideoJSOptions, MediaElementOptions } from '~/types/player-config';
 import { ERROR_CODES } from '~/types/errors';
@@ -254,7 +255,7 @@ export function PlayerContainer({
   return (
     <div 
       ref={containerRef}
-      className={cn("bg-black rounded-lg overflow-hidden w-full", className)}
+      className={cn("bg-black rounded-lg overflow-hidden w-full aspect-video", className)}
     >
       {playerType === 'videojs' ? (
         <VideoJSPlayerComponent
@@ -263,7 +264,7 @@ export function PlayerContainer({
           options={videoJSOptions}
           onReady={handlePlayerReady}
           onError={handlePlayerError}
-          key={`videojs-${file.name}-${state.retryCount}`}
+          key={`videojs-${file.name}-${file.lastModified}-${state.retryCount}`}
         />
       ) : (
         <MediaElementPlayerComponent
@@ -272,7 +273,7 @@ export function PlayerContainer({
           options={mediaElementOptions}
           onReady={handlePlayerReady}
           onError={handlePlayerError}
-          key={`mediaelement-${file.name}-${state.retryCount}`}
+          key={`mediaelement-${file.name}-${file.lastModified}-${state.retryCount}`}
         />
       )}
       

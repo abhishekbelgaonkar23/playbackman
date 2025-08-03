@@ -164,6 +164,12 @@ export default function MediaElementPlayer({
       return;
     }
 
+    // Ensure the video element is attached to the DOM
+    if (!document.contains(videoRef.current)) {
+      console.warn('Video element not attached to DOM, skipping MediaElement initialization');
+      return;
+    }
+
     isInitializingRef.current = true;
 
     try {
@@ -176,6 +182,9 @@ export default function MediaElementPlayer({
         link.rel = 'stylesheet';
         link.href = 'https://cdn.jsdelivr.net/npm/mediaelement@7.0.7/build/mediaelementplayer.min.css';
         document.head.appendChild(link);
+
+        // Wait a bit for CSS to load
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       const videoElement = videoRef.current;
@@ -308,8 +317,19 @@ export default function MediaElementPlayer({
    * Effect to initialize player when component mounts or props change
    */
   useEffect(() => {
-    if (fileUrl) {
-      initializePlayer();
+    // Clean up any existing player first
+    cleanup();
+
+    if (fileUrl && videoRef.current) {
+      // Use requestAnimationFrame to ensure DOM is ready
+      const initializeAfterRender = () => {
+        // Double-check that the element is still in the DOM
+        if (videoRef.current && document.contains(videoRef.current)) {
+          initializePlayer();
+        }
+      };
+
+      requestAnimationFrame(initializeAfterRender);
     }
 
     return cleanup;
