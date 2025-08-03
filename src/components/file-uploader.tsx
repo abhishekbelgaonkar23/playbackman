@@ -37,7 +37,7 @@ export function FileUploader({
 
   const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files && files.length > 0) {
+    if (files && files.length > 0 && files[0]) {
       handleFileSelect(files[0]);
     }
   }, [handleFileSelect]);
@@ -80,7 +80,7 @@ export function FileUploader({
         acceptedFormats.some(format => file.name.toLowerCase().endsWith(format.replace('*', '')))
       );
       
-      if (videoFiles.length > 0) {
+      if (videoFiles.length > 0 && videoFiles[0]) {
         handleFileSelect(videoFiles[0]);
       }
     }

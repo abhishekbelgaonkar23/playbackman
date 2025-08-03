@@ -231,7 +231,7 @@ export class PrivacySecurityService {
         throw new Error('XMLHttpRequest blocked for privacy');
       }
       
-      return originalXHROpen.apply(this, [method, url, ...args]);
+      return originalXHROpen.apply(this, [method, url, true, args[0], args[1]] as any);
     };
   }
 

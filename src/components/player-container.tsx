@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from 'react';
 import dynamic from 'next/dynamic';
 import { LoadingState, LoadingOverlay } from '~/components/ui/spinner';
 import { ErrorDisplay, PlayerInitError } from '~/components/error-display';
@@ -48,13 +48,13 @@ interface PlayerContainerState {
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 1000; // 1 second
 
-export function PlayerContainer({ 
+export const PlayerContainer = React.forwardRef<any, PlayerContainerProps>(({ 
   file, 
   playerType, 
   onError, 
   onReady, 
   className 
-}: PlayerContainerProps) {
+}, ref) => {
   const [state, setState] = useState<PlayerContainerState>({
     isLoading: true,
     isReady: false,
@@ -64,6 +64,7 @@ export function PlayerContainer({
   });
 
   const playerRef = useRef<Player | null>(null);
+  const playerComponentRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileUrlRef = useRef<string | null>(null);
 
@@ -96,6 +97,49 @@ export function PlayerContainer({
     }));
     onReady();
   }, [onReady]);
+
+  // Expose player methods through ref
+  useImperativeHandle(ref, () => ({
+    get isPlaying() {
+      return playerComponentRef.current?.isPlaying || false;
+    },
+    get currentTime() {
+      return playerComponentRef.current?.currentTime || 0;
+    },
+    get duration() {
+      return playerComponentRef.current?.duration || 0;
+    },
+    get volume() {
+      return playerComponentRef.current?.volume || 1;
+    },
+    get playbackRate() {
+      return playerComponentRef.current?.playbackRate || 1;
+    },
+    play() {
+      playerComponentRef.current?.play();
+    },
+    pause() {
+      playerComponentRef.current?.pause();
+    },
+    seek(time: number) {
+      playerComponentRef.current?.seek(time);
+    },
+    setVolume(volume: number) {
+      playerComponentRef.current?.setVolume(volume);
+    },
+    toggleMute() {
+      playerComponentRef.current?.toggleMute();
+    },
+    toggleFullscreen() {
+      playerComponentRef.current?.toggleFullscreen();
+    },
+    toggleCaptions() {
+      playerComponentRef.current?.toggleCaptions();
+    },
+    setPlaybackRate(rate: number) {
+      playerComponentRef.current?.setPlaybackRate(rate);
+    }
+  }), []);
 
   /**
    * Handles player errors with retry logic
@@ -259,6 +303,7 @@ export function PlayerContainer({
     >
       {playerType === 'videojs' ? (
         <VideoJSPlayerComponent
+          ref={playerComponentRef}
           file={file}
           fileUrl={fileUrlRef.current || ''}
           options={videoJSOptions}
@@ -268,6 +313,7 @@ export function PlayerContainer({
         />
       ) : (
         <MediaElementPlayerComponent
+          ref={playerComponentRef}
           file={file}
           fileUrl={fileUrlRef.current || ''}
           options={mediaElementOptions}
@@ -285,4 +331,6 @@ export function PlayerContainer({
       />
     </div>
   );
-}
+});
+
+PlayerContainer.displayName = 'PlayerContainer';

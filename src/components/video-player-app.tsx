@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { FileUploader } from './file-uploader';
 import { PlayerContainer } from './player-container';
 import { ErrorBoundary } from './error-boundary';
 import { ErrorDisplay } from './error-display';
 import { LoadingState } from './ui/spinner';
+import { KeyboardShortcutsLegend } from './keyboard-shortcuts-legend';
 import { fileDetectionService } from '~/services/file-detection.service';
 import { privacySecurityService } from '~/services/privacy-security.service';
 import { useResponsive, useIsMobile, useIsLandscape } from '~/hooks/use-responsive';
@@ -24,6 +25,9 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
   const viewport = useResponsive();
   const isMobile = useIsMobile();
   const isLandscape = useIsLandscape();
+
+  // Player ref for keyboard shortcuts
+  const playerRef = useRef<any>(null);
 
   // Application state
   const [state, setState] = useState<AppState>({
@@ -178,6 +182,97 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
   }, []);
 
   /**
+   * Handles keyboard shortcuts
+   */
+  const handleKeyboardShortcut = useCallback((action: string, data?: any) => {
+    if (!playerRef.current) return;
+
+    const player = playerRef.current;
+    
+    switch (action) {
+      case 'toggle-play':
+        if (player.isPlaying) {
+          player.pause();
+        } else {
+          player.play();
+        }
+        break;
+      
+      case 'rewind-10':
+        player.seek(Math.max(0, player.currentTime - 10));
+        break;
+      
+      case 'forward-10':
+        player.seek(Math.min(player.duration || 0, player.currentTime + 10));
+        break;
+      
+      case 'seek-back-5':
+        player.seek(Math.max(0, player.currentTime - 5));
+        break;
+      
+      case 'seek-forward-5':
+        player.seek(Math.min(player.duration || 0, player.currentTime + 5));
+        break;
+      
+      case 'jump-to-percent':
+        if (player.duration && typeof data === 'number') {
+          player.seek((data / 100) * player.duration);
+        }
+        break;
+      
+      case 'jump-to-start':
+        player.seek(0);
+        break;
+      
+      case 'jump-to-end':
+        if (player.duration) {
+          player.seek(player.duration - 1);
+        }
+        break;
+      
+      case 'volume-up':
+        player.setVolume(Math.min(1, player.volume + 0.1));
+        break;
+      
+      case 'volume-down':
+        player.setVolume(Math.max(0, player.volume - 0.1));
+        break;
+      
+      case 'toggle-mute':
+        player.toggleMute();
+        break;
+      
+      case 'toggle-fullscreen':
+        player.toggleFullscreen();
+        break;
+      
+      case 'toggle-captions':
+        player.toggleCaptions();
+        break;
+      
+      case 'speed-up':
+        player.setPlaybackRate(Math.min(2, player.playbackRate + 0.25));
+        break;
+      
+      case 'speed-down':
+        player.setPlaybackRate(Math.max(0.25, player.playbackRate - 0.25));
+        break;
+      
+      case 'frame-back':
+        if (!player.isPlaying && player.duration) {
+          player.seek(Math.max(0, player.currentTime - (1/30))); // Assume 30fps
+        }
+        break;
+      
+      case 'frame-forward':
+        if (!player.isPlaying && player.duration) {
+          player.seek(Math.min(player.duration, player.currentTime + (1/30))); // Assume 30fps
+        }
+        break;
+    }
+  }, []);
+
+  /**
    * Cleanup on unmount and file changes
    */
   useEffect(() => {
@@ -291,6 +386,7 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
             {/* Video Player with smooth transition and responsive sizing */}
             <div className="transition-all duration-300 ease-in-out">
               <PlayerContainer
+                ref={playerRef}
                 file={state.selectedFile!}
                 playerType={state.playerType!}
                 onReady={handlePlayerReady}
@@ -310,6 +406,13 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
                 <div className="text-xs sm:text-sm text-muted-foreground animate-in fade-in duration-500 bg-muted/30 rounded-full px-3 py-1">
                   ✓ Player ready and loaded
                 </div>
+              </div>
+            )}
+
+            {/* Keyboard Shortcuts Legend */}
+            {state.isPlayerReady && (
+              <div className="animate-in fade-in duration-700 delay-300">
+                <KeyboardShortcutsLegend onShortcut={handleKeyboardShortcut} />
               </div>
             )}
           </div>

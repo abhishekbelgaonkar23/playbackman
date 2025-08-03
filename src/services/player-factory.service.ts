@@ -64,6 +64,34 @@ class VideoJSPlayer implements Player {
   set muted(mute: boolean) {
     this.videoJSInstance?.muted(mute);
   }
+
+  get paused(): boolean {
+    return this.videoJSInstance?.paused() || false;
+  }
+
+  get ended(): boolean {
+    return this.videoJSInstance?.ended() || false;
+  }
+
+  seek(time: number): void {
+    this.videoJSInstance?.currentTime(time);
+  }
+
+  setVolume(volume: number): void {
+    this.videoJSInstance?.volume(volume);
+  }
+
+  toggleMute(): void {
+    this.videoJSInstance?.muted(!this.videoJSInstance.muted());
+  }
+
+  togglePlayPause(): void {
+    if (this.paused) {
+      this.play();
+    } else {
+      this.pause();
+    }
+  }
 }
 
 // MediaElement.js player wrapper
@@ -134,6 +162,40 @@ class MediaElementPlayer implements Player {
   set muted(mute: boolean) {
     if (this.mediaElementInstance) {
       this.mediaElementInstance.muted = mute;
+    }
+  }
+
+  get paused(): boolean {
+    return this.mediaElementInstance?.paused || false;
+  }
+
+  get ended(): boolean {
+    return this.mediaElementInstance?.ended || false;
+  }
+
+  seek(time: number): void {
+    if (this.mediaElementInstance) {
+      this.mediaElementInstance.currentTime = time;
+    }
+  }
+
+  setVolume(volume: number): void {
+    if (this.mediaElementInstance) {
+      this.mediaElementInstance.volume = volume;
+    }
+  }
+
+  toggleMute(): void {
+    if (this.mediaElementInstance) {
+      this.mediaElementInstance.muted = !this.mediaElementInstance.muted;
+    }
+  }
+
+  togglePlayPause(): void {
+    if (this.paused) {
+      this.play();
+    } else {
+      this.pause();
     }
   }
 }
@@ -236,12 +298,13 @@ export class PlayerFactoryService implements IPlayerFactory {
 
     // Default Video.js options
     const defaultOptions: VideoJSOptions = {
-      controls: true,
-      responsive: true,
-      fluid: true,
-      playbackRates: [0.5, 1, 1.25, 1.5, 2],
-      preload: 'metadata',
-      ...options
+      ...options,
+      // Override with defaults if not provided
+      controls: options.controls ?? true,
+      responsive: options.responsive ?? true,
+      fluid: options.fluid ?? true,
+      playbackRates: options.playbackRates ?? [0.5, 1, 1.25, 1.5, 2],
+      preload: options.preload ?? 'metadata'
     };
 
     return new Promise((resolve, reject) => {
@@ -309,7 +372,7 @@ export class PlayerFactoryService implements IPlayerFactory {
       };
 
       try {
-        new MediaElementJS.MediaElementPlayer(videoElement, {
+        new (MediaElementJS as any).MediaElementPlayer(videoElement, {
           ...defaultOptions,
           success: successCallback,
           error: errorCallback

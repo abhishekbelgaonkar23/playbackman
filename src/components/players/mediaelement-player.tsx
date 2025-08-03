@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback } from 'react';
+import { EnhancedVideoPlayer } from './enhanced-video-player';
 import type { Player } from '~/types';
 import type { MediaElementOptions } from '~/types/player-config';
 
@@ -85,8 +86,11 @@ class MediaElementPlayerWrapper implements Player {
   }
 
   get duration(): number {
-    return (!this.isDestroyed && this.mediaElementInstance) ? 
-      (isNaN(this.mediaElementInstance.duration) ? 0 : this.mediaElementInstance.duration) : 0;
+    if (!this.isDestroyed && this.mediaElementInstance) {
+      const dur = this.mediaElementInstance.duration;
+      return (isNaN(dur) || !isFinite(dur)) ? 0 : dur;
+    }
+    return 0;
   }
 
   // Audio controls
@@ -145,215 +149,74 @@ class MediaElementPlayerWrapper implements Player {
   }
 }
 
-export default function MediaElementPlayer({ 
+const MediaElementPlayer = React.forwardRef<any, MediaElementPlayerProps>(({ 
   file, 
   fileUrl, 
   options, 
   onReady, 
   onError 
-}: MediaElementPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+}, ref) => {
   const playerRef = useRef<MediaElementPlayerWrapper | null>(null);
-  const isInitializingRef = useRef(false);
+  const hasInitialized = useRef(false);
 
-  /**
-   * Initialize MediaElement.js player
-   */
-  const initializePlayer = useCallback(async () => {
-    if (!videoRef.current || isInitializingRef.current) {
-      return;
+  // Create a simple player wrapper for the enhanced video player
+  const createPlayerWrapper = useCallback(() => {
+    if (hasInitialized.current) return;
+    
+    hasInitialized.current = true;
+    
+    // Create a minimal wrapper that satisfies the Player interface
+    const playerWrapper: Player = {
+      play: () => {},
+      pause: () => {},
+      destroy: () => {
+        hasInitialized.current = false;
+        playerRef.current = null;
+      },
+      on: () => {},
+      currentTime: 0,
+      duration: 0,
+      volume: 1,
+      muted: false,
+      paused: true,
+      ended: false,
+      seek: () => {},
+      setVolume: () => {},
+      toggleMute: () => {},
+      togglePlayPause: () => {}
+    };
+    
+    playerRef.current = playerWrapper as MediaElementPlayerWrapper;
+    onReady(playerWrapper);
+  }, [onReady]);
+
+  // Initialize the player wrapper when component mounts
+  useEffect(() => {
+    if (fileUrl && !hasInitialized.current) {
+      createPlayerWrapper();
     }
-
-    // Ensure the video element is attached to the DOM
-    if (!document.contains(videoRef.current)) {
-      console.warn('Video element not attached to DOM, skipping MediaElement initialization');
-      return;
-    }
-
-    isInitializingRef.current = true;
-
-    try {
-      // Dynamic import of MediaElement.js
-      const MediaElementJS = await import('mediaelement');
-
-      // Ensure MediaElement.js CSS is loaded
-      if (typeof window !== 'undefined' && !document.querySelector('link[href*="mediaelementplayer.css"]')) {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://cdn.jsdelivr.net/npm/mediaelement@7.0.7/build/mediaelementplayer.min.css';
-        document.head.appendChild(link);
-
-        // Wait a bit for CSS to load
-        await new Promise(resolve => setTimeout(resolve, 100));
+    
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.destroy();
       }
-
-      const videoElement = videoRef.current;
-      
-      // Set video source
-      videoElement.src = fileUrl;
-      videoElement.controls = true;
-
-      // Prepare MediaElement.js options with controls enabled
-      const playerOptions: MediaElementOptions = {
-        controls: true,
-        enableAutosize: true,
-        features: ['playpause', 'progress', 'current', 'duration', 'tracks', 'volume', 'fullscreen'],
-        ...options,
-        success: (mediaElement: HTMLMediaElement, domNode: HTMLElement) => {
-          const playerWrapper = new MediaElementPlayerWrapper(mediaElement, domNode);
-          playerRef.current = playerWrapper;
-
-          // Set up error handling
-          mediaElement.addEventListener('error', (event) => {
-            const target = event.target as HTMLMediaElement;
-            let errorMessage = 'MediaElement.js playback error';
-            
-            if (target.error) {
-              switch (target.error.code) {
-                case MediaError.MEDIA_ERR_ABORTED:
-                  errorMessage = 'Video loading was aborted';
-                  break;
-                case MediaError.MEDIA_ERR_NETWORK:
-                  errorMessage = 'Network error occurred while loading video';
-                  break;
-                case MediaError.MEDIA_ERR_DECODE:
-                  errorMessage = 'Video decoding error';
-                  break;
-                case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                  errorMessage = 'Video format not supported by MediaElement.js';
-                  break;
-                default:
-                  errorMessage = target.error.message || 'Unknown MediaElement.js error';
-              }
-            }
-            
-            onError(errorMessage, target.error?.code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED);
-          });
-
-          // Set up playback event listeners for real-time responsiveness
-          mediaElement.addEventListener('loadstart', () => {
-            console.log('MediaElement.js: Load started');
-          });
-
-          mediaElement.addEventListener('canplay', () => {
-            console.log('MediaElement.js: Can play');
-          });
-
-          mediaElement.addEventListener('loadedmetadata', () => {
-            console.log('MediaElement.js: Metadata loaded');
-          });
-
-          // Playback control events
-          mediaElement.addEventListener('play', () => {
-            console.log('MediaElement.js: Play started');
-          });
-
-          mediaElement.addEventListener('pause', () => {
-            console.log('MediaElement.js: Paused');
-          });
-
-          mediaElement.addEventListener('timeupdate', () => {
-            // Real-time time updates for seek responsiveness
-            // This ensures UI components can sync with playback position
-          });
-
-          mediaElement.addEventListener('volumechange', () => {
-            console.log('MediaElement.js: Volume changed');
-          });
-
-          mediaElement.addEventListener('seeking', () => {
-            console.log('MediaElement.js: Seeking');
-          });
-
-          mediaElement.addEventListener('seeked', () => {
-            console.log('MediaElement.js: Seek completed');
-          });
-
-          mediaElement.addEventListener('ended', () => {
-            console.log('MediaElement.js: Playback ended');
-          });
-
-          // Call original success callback if provided
-          if (options.success) {
-            options.success(mediaElement, domNode);
-          }
-
-          onReady(playerWrapper);
-        },
-        error: (error: any) => {
-          const errorMessage = error?.message || 'MediaElement.js initialization failed';
-          onError(`MediaElement.js error: ${errorMessage}`, true);
-          
-          // Call original error callback if provided
-          if (options.error) {
-            options.error(error);
-          }
-        }
-      };
-
-      // Initialize MediaElement.js player
-      new MediaElementJS.MediaElementPlayer(videoElement, playerOptions);
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load MediaElement.js';
-      onError(`MediaElement.js library error: ${errorMessage}`, true);
-    } finally {
-      isInitializingRef.current = false;
-    }
-  }, [file, fileUrl, options, onReady, onError]);
-
-  /**
-   * Cleanup function
-   */
-  const cleanup = useCallback(() => {
-    if (playerRef.current) {
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
-    isInitializingRef.current = false;
-  }, []);
-
-  /**
-   * Effect to initialize player when component mounts or props change
-   */
-  useEffect(() => {
-    // Clean up any existing player first
-    cleanup();
-
-    if (fileUrl && videoRef.current) {
-      // Use requestAnimationFrame to ensure DOM is ready
-      const initializeAfterRender = () => {
-        // Double-check that the element is still in the DOM
-        if (videoRef.current && document.contains(videoRef.current)) {
-          initializePlayer();
-        }
-      };
-
-      requestAnimationFrame(initializeAfterRender);
-    }
-
-    return cleanup;
-  }, [fileUrl, initializePlayer, cleanup]);
-
-  /**
-   * Effect for cleanup on unmount
-   */
-  useEffect(() => {
-    return cleanup;
-  }, [cleanup]);
+    };
+  }, [fileUrl, createPlayerWrapper]);
 
   return (
-    <div className="relative w-full aspect-video max-w-full">
-      <video
-        ref={videoRef}
-        className="w-full h-full object-contain"
-        controls
-        preload="metadata"
-        playsInline
-      >
-        <source src={fileUrl} type={file.type || 'video/mp4'} />
-        Your browser does not support the video tag.
-      </video>
-    </div>
+    <EnhancedVideoPlayer
+      ref={ref}
+      src={fileUrl}
+      autoPlay={false}
+      loop={options.loop || false}
+      muted={false}
+      onLoadStart={() => console.log('MediaElement: Load started')}
+      onLoadEnd={() => console.log('MediaElement: Load ended')}
+      onError={(error) => onError(error, true)}
+      className="w-full h-full"
+    />
   );
-}
+});
+
+MediaElementPlayer.displayName = 'MediaElementPlayer';
+export default MediaElementPlayer;
