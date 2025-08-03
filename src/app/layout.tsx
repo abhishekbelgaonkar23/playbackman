@@ -7,7 +7,7 @@ import { ThemeProvider } from "next-themes";
 export const metadata: Metadata = {
 	title: "PlaybackMan - Video Player",
 	description: "A client-side multi-format video player for local files",
-	icons: [{ rel: "icon", url: "/favicon.ico" }],
+	icons: [{ rel: "icon", url: "/op.svg" }],
 };
 
 const geist = Geist({
