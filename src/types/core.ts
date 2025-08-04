@@ -15,6 +15,17 @@ export interface FileInfo {
   extension: string;
   lastModified: number;
   url?: string; // Object URL for playback
+  duration?: number; // Video duration in seconds
+  thumbnail?: string; // Thumbnail data URL
+}
+
+// Playlist item interface
+export interface PlaylistItem {
+  id: string;
+  file: File;
+  fileInfo: FileInfo;
+  playerType: PlayerType;
+  position: number;
 }
 
 // Validation result interface
@@ -35,6 +46,10 @@ export interface AppState {
   // File management
   selectedFile: File | null;
   fileInfo: FileInfo | null;
+  
+  // Playlist management
+  playlist: PlaylistItem[];
+  currentPlaylistIndex: number;
   
   // Player management
   currentPlayer: Player | null;
@@ -96,10 +111,11 @@ export interface VideoPlayerAppProps {
 }
 
 export interface FileUploaderProps {
-  onFileSelect: (file: File) => void;
+  onFileSelect: (files: File | File[]) => void;
   acceptedFormats: string[];
   isLoading: boolean;
   error?: AppError | null;
+  multiple?: boolean;
 }
 
 export interface PlayerContainerProps {
@@ -107,5 +123,20 @@ export interface PlayerContainerProps {
   playerType: PlayerType;
   onError: (error: AppError) => void;
   onReady: () => void;
+  onPreviousVideo?: () => void;
+  onNextVideo?: () => void;
+  className?: string;
+}
+
+export interface PlaylistProps {
+  playlist: PlaylistItem[];
+  currentIndex: number;
+  onReorder: (newPlaylist: PlaylistItem[]) => void;
+  onSelect: (index: number) => void;
+  onRemove: (index: number) => void;
+  onFileSelect: (files: File | File[]) => void;
+  acceptedFormats: string[];
+  isLoading: boolean;
+  error?: AppError | null;
   className?: string;
 }

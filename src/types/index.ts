@@ -6,6 +6,7 @@
 export type {
   PlayerType,
   FileInfo,
+  PlaylistItem,
   ValidationResult,
   SupportedFormats,
   AppState,
@@ -14,7 +15,8 @@ export type {
   PlayerFactory,
   VideoPlayerAppProps,
   FileUploaderProps,
-  PlayerContainerProps
+  PlayerContainerProps,
+  PlaylistProps
 } from './core';
 
 // Player configuration types

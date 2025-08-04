@@ -17,6 +17,8 @@ interface EnhancedVideoPlayerProps {
   onLoadStart?: () => void;
   onLoadEnd?: () => void;
   onError?: (error: string) => void;
+  onPreviousVideo?: () => void;
+  onNextVideo?: () => void;
 }
 
 export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProps>(({
@@ -28,7 +30,9 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
   className,
   onLoadStart,
   onLoadEnd,
-  onError
+  onError,
+  onPreviousVideo,
+  onNextVideo
 }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,6 +55,8 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
   const [seekAmount, setSeekAmount] = useState(0);
   const [showSpeedIndicator, setShowSpeedIndicator] = useState(false);
   const [speedIndicatorTimeout, setSpeedIndicatorTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [canPlay, setCanPlay] = useState(false);
+  const [autoplayFailed, setAutoplayFailed] = useState(false);
 
   const { isMobile } = useMobileDetection();
 
@@ -80,6 +86,27 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
     };
   }, [showControls, isPlaying]);
 
+  // Video source validation
+  useEffect(() => {
+    if (src && videoRef.current) {
+      // Reset states when source changes
+      setIsLoading(true);
+      setCanPlay(false);
+      
+      // Check if the source is a valid URL
+      try {
+        new URL(src);
+      } catch {
+        // If not a valid URL, check if it's a blob URL or data URL
+        if (!src.startsWith('blob:') && !src.startsWith('data:')) {
+          onError?.('Invalid video source URL');
+          setIsLoading(false);
+          return;
+        }
+      }
+    }
+  }, [src, onError]);
+
   // Video event handlers
   useEffect(() => {
     const video = videoRef.current;
@@ -101,7 +128,10 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
         setDuration(dur);
       }
     };
-    const handlePlay = () => setIsPlaying(true);
+    const handlePlay = () => {
+      setIsPlaying(true);
+      setAutoplayFailed(false);
+    };
     const handlePause = () => setIsPlaying(false);
     const handleVolumeChange = () => {
       setVolume(video.volume);
@@ -112,9 +142,34 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
       onLoadStart?.();
     };
 
-    const handleError = () => {
+    const handleError = (event: Event) => {
       setIsLoading(false);
-      onError?.('Failed to load video');
+      
+      const video = event.target as HTMLVideoElement;
+      const error = video.error;
+      
+      let errorMessage = 'Failed to load video';
+      
+      if (error) {
+        switch (error.code) {
+          case MediaError.MEDIA_ERR_ABORTED:
+            errorMessage = 'Video loading was aborted';
+            break;
+          case MediaError.MEDIA_ERR_NETWORK:
+            errorMessage = 'Network error occurred while loading video';
+            break;
+          case MediaError.MEDIA_ERR_DECODE:
+            errorMessage = 'Video format is corrupted or not supported';
+            break;
+          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+            errorMessage = 'Video format not supported by your browser';
+            break;
+          default:
+            errorMessage = error.message || 'Unknown video error occurred';
+        }
+      }
+      
+      onError?.(errorMessage);
     };
     const handleRateChange = () => setPlaybackRate(video.playbackRate);
     const handleCanPlay = () => {
@@ -122,6 +177,46 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
       if (dur && isFinite(dur) && !isNaN(dur) && dur > 0) {
         setDuration(dur);
       }
+      setIsLoading(false);
+      setCanPlay(true);
+      
+      // Auto-play when ready if autoPlay is enabled
+      if (autoPlay && video.paused) {
+        video.play().catch((error) => {
+          console.warn('Autoplay failed:', error);
+          setAutoplayFailed(true);
+        });
+      }
+    };
+
+    const handleWaiting = () => {
+      // Only show loading for actual buffering, not seeking
+      if (video && !video.seeking) {
+        setIsLoading(true);
+      }
+    };
+
+    const handleCanPlayThrough = () => {
+      setIsLoading(false);
+    };
+
+    const handleProgress = () => {
+      // Hide loading when video has buffered enough
+      if (video && video.buffered.length > 0) {
+        const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+        const currentTime = video.currentTime;
+        if (bufferedEnd > currentTime + 2) { // 2 seconds ahead buffered
+          setIsLoading(false);
+        }
+      }
+    };
+
+    const handleSeeking = () => {
+      // Don't show loading spinner for seeking, it's handled by seeked event
+    };
+
+    const handleSeeked = () => {
+      setIsLoading(false);
     };
     
     const handleLoadedData = () => {
@@ -137,7 +232,7 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
     video.addEventListener('durationchange', handleDurationChange);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('canplay', handleCanPlay);
-    video.addEventListener('canplaythrough', handleCanPlay);
+    video.addEventListener('canplaythrough', handleCanPlayThrough);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('volumechange', handleVolumeChange);
@@ -145,6 +240,10 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
     video.addEventListener('loadeddata', handleLoadedData);
     video.addEventListener('error', handleError);
     video.addEventListener('ratechange', handleRateChange);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('seeking', handleSeeking);
+    video.addEventListener('seeked', handleSeeked);
+    video.addEventListener('progress', handleProgress);
 
     // Force duration check after a short delay
     const checkDuration = () => {
@@ -166,7 +265,7 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
       video.removeEventListener('durationchange', handleDurationChange);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('canplay', handleCanPlay);
-      video.removeEventListener('canplaythrough', handleCanPlay);
+      video.removeEventListener('canplaythrough', handleCanPlayThrough);
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('volumechange', handleVolumeChange);
@@ -174,6 +273,10 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
       video.removeEventListener('loadeddata', handleLoadedData);
       video.removeEventListener('error', handleError);
       video.removeEventListener('ratechange', handleRateChange);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('seeking', handleSeeking);
+      video.removeEventListener('seeked', handleSeeked);
+      video.removeEventListener('progress', handleProgress);
       clearTimeout(durationTimer);
       clearInterval(durationInterval);
     };
@@ -190,8 +293,41 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
   }, []);
 
   // Control handlers
-  const handlePlay = () => {
-    videoRef.current?.play();
+  const handlePlay = async () => {
+    if (!videoRef.current) return;
+    
+    // Check if video source is valid
+    if (!src || src.trim() === '') {
+      onError?.('No video source provided');
+      return;
+    }
+    
+    // Check if video can be played
+    if (!canPlay) {
+      onError?.('Video is not ready to play yet');
+      return;
+    }
+    
+    try {
+      await videoRef.current.play();
+    } catch (error) {
+      console.error('Play failed:', error);
+      
+      // Handle specific error types
+      if (error instanceof Error) {
+        let errorMessage = 'Failed to play video';
+        
+        if (error.name === 'NotSupportedError') {
+          errorMessage = 'Video format not supported by your browser';
+        } else if (error.name === 'NotAllowedError') {
+          errorMessage = 'Playback blocked by browser policy';
+        } else if (error.name === 'AbortError') {
+          errorMessage = 'Playback was aborted';
+        }
+        
+        onError?.(errorMessage);
+      }
+    }
   };
 
   const handlePause = () => {
@@ -199,8 +335,15 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
   };
 
   const handleSeek = (time: number, showIndicator = false, amount = 0) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
+    if (videoRef.current && duration > 0 && isFinite(duration) && isFinite(time)) {
+      const seekTime = Math.max(0, Math.min(duration, time));
+      
+      try {
+        // Set the current time directly
+        videoRef.current.currentTime = seekTime;
+      } catch (error) {
+        console.warn('Seek failed:', error);
+      }
       
       // Show seek indicator for keyboard/button controls
       if (showIndicator) {
@@ -316,6 +459,8 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
   };
 
   const handleVideoClick = () => {
+    if (!canPlay) return;
+    
     if (isPlaying) {
       handlePause();
     } else {
@@ -364,12 +509,16 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
       {/* Video Element */}
       <video
         ref={videoRef}
-        src={src}
+        src={src || undefined}
         poster={poster}
         autoPlay={autoPlay}
         loop={loop}
         muted={muted}
-        className="w-full h-full object-contain cursor-pointer"
+        preload="metadata"
+        className={cn(
+          "w-full h-full object-contain",
+          canPlay ? "cursor-pointer" : "cursor-not-allowed"
+        )}
         playsInline
         onClick={handleVideoClick}
       />
@@ -431,6 +580,41 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
         </div>
       )}
 
+      {/* Error overlay for unsupported video */}
+      {!canPlay && !isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="text-center text-white p-6 max-w-md">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Video Cannot Be Played</h3>
+            <p className="text-sm text-white/80">
+              This video format may not be supported by your browser, or the file may be corrupted.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Click to play overlay when autoplay fails */}
+      {canPlay && autoplayFailed && !isPlaying && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm cursor-pointer transition-opacity hover:bg-black/70"
+          onClick={handleVideoClick}
+        >
+          <div className="text-center text-white">
+            <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors">
+              <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+            <p className="text-lg font-medium mb-1">Click to Play</p>
+            <p className="text-sm text-gray-300">Autoplay was blocked by your browser</p>
+          </div>
+        </div>
+      )}
+
       {/* Controls */}
       {isMobile ? (
         <MobileControls
@@ -442,7 +626,7 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
           isFullscreen={isFullscreen}
           isLoading={isLoading}
           showControls={showControls}
-          onPlay={handlePlay}
+          onPlay={canPlay ? handlePlay : () => {}}
           onPause={handlePause}
           onSeek={handleSeek}
           onVolumeChange={handleVolumeChange}
@@ -465,7 +649,7 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
             playbackRate={playbackRate}
             showCaptions={showCaptions}
             isLoading={isLoading}
-            onPlay={handlePlay}
+            onPlay={canPlay ? handlePlay : () => {}}
             onPause={handlePause}
             onSeek={handleSeek}
             onVolumeChange={handleVolumeChange}
@@ -474,6 +658,8 @@ export const EnhancedVideoPlayer = React.forwardRef<any, EnhancedVideoPlayerProp
             onPlaybackRateChange={handlePlaybackRateChange}
             onCaptionsToggle={handleCaptionsToggle}
             onSubtitleUpload={handleSubtitleUpload}
+            onPreviousVideo={onPreviousVideo}
+            onNextVideo={onNextVideo}
           />
         </div>
       )}

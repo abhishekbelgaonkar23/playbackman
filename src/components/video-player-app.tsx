@@ -1,20 +1,24 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { FileUploader } from './file-uploader';
 import { PlayerContainer } from './player-container';
+import { Playlist } from './playlist';
+import { VideoBacklight } from './video-backlight';
 import { ErrorBoundary } from './error-boundary';
 import { ErrorDisplay } from './error-display';
 import { LoadingState } from './ui/spinner';
 import { KeyboardShortcutsLegend } from './keyboard-shortcuts-legend';
+import { CompactFileUploader } from './compact-file-uploader';
 import { fileDetectionService } from '~/services/file-detection.service';
 import { privacySecurityService } from '~/services/privacy-security.service';
+import { thumbnailService } from '~/services/thumbnail.service';
 import { useResponsive, useIsMobile, useIsLandscape } from '~/hooks/use-responsive';
 import { cn } from '~/lib/utils';
 import type { 
   VideoPlayerAppProps, 
   AppState, 
   FileInfo, 
+  PlaylistItem,
   PlayerType,
   AppError 
 } from '~/types';
@@ -28,11 +32,14 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
 
   // Player ref for keyboard shortcuts
   const playerRef = useRef<any>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
 
   // Application state
   const [state, setState] = useState<AppState>({
     selectedFile: null,
     fileInfo: null,
+    playlist: [],
+    currentPlaylistIndex: -1,
     currentPlayer: null,
     playerType: null,
     isPlayerReady: false,
@@ -52,9 +59,9 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
   ].map(ext => `.${ext}`);
 
   /**
-   * Creates file info object from File with secure Object URL
+   * Creates file info object from File with secure Object URL and thumbnail
    */
-  const createFileInfo = useCallback((file: File): FileInfo => {
+  const createFileInfo = useCallback(async (file: File): Promise<FileInfo> => {
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     
     // Use privacy security service to create secure Object URL
@@ -66,70 +73,106 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
       throw new Error('Failed to process file for security reasons');
     }
     
+    // Generate thumbnail and get video metadata
+    let duration: number | undefined;
+    let thumbnail: string | undefined;
+    
+    try {
+      const metadata = await thumbnailService.generateThumbnail(file);
+      duration = metadata.duration;
+      thumbnail = metadata.thumbnail;
+    } catch (error) {
+      console.warn('Failed to generate thumbnail:', error);
+      // Continue without thumbnail
+    }
+    
     return {
       name: file.name,
       size: file.size,
       type: file.type,
       extension,
       lastModified: file.lastModified,
-      url
+      url,
+      duration,
+      thumbnail
     };
   }, []);
 
   /**
    * Handles file selection from FileUploader
    */
-  const handleFileSelect = useCallback(async (file: File) => {
+  const handleFileSelect = useCallback(async (files: File | File[]) => {
     setState(prev => ({ 
       ...prev, 
       isLoading: true, 
-      error: null,
-      selectedFile: file
+      error: null
     }));
 
     try {
-      // Validate file using FileDetectionService
-      const validationResult = fileDetectionService.validateFile(file);
+      const fileArray = Array.isArray(files) ? files : [files];
+      const newPlaylistItems: PlaylistItem[] = [];
       
-      if (!validationResult.isValid) {
+      // Process each file
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i]!;
+        
+        // Validate file using FileDetectionService
+        const validationResult = fileDetectionService.validateFile(file);
+        
+        if (!validationResult.isValid) {
+          console.warn(`Skipping invalid file: ${file.name} - ${validationResult.error}`);
+          continue;
+        }
+
+        // Create file info with thumbnail
+        const fileInfo = await createFileInfo(file);
+        const playerType = validationResult.playerType!;
+
+        // Create playlist item
+        const playlistItem: PlaylistItem = {
+          id: `${file.name}-${file.lastModified}-${Math.random()}`,
+          file,
+          fileInfo,
+          playerType,
+          position: state.playlist.length + newPlaylistItems.length
+        };
+
+        newPlaylistItems.push(playlistItem);
+      }
+
+      if (newPlaylistItems.length === 0) {
         const error: AppError = {
           type: 'file',
-          message: validationResult.error || 'File validation failed',
+          message: 'No valid video files found',
           code: ERROR_CODES.UNSUPPORTED_FORMAT,
           recoverable: true,
-          suggestions: ['Please select a supported video format'],
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type
+          suggestions: ['Please select supported video formats (MP4, WebM, OGG, FLV, WMV)']
         };
         
         setState(prev => ({ 
           ...prev, 
           isLoading: false, 
-          error,
-          selectedFile: null,
-          fileInfo: null
+          error
         }));
         return;
       }
 
-      // Create file info
-      const fileInfo = createFileInfo(file);
-      const playerType = validationResult.playerType!;
-
-      // Update state with file info and player type
-      setState(prev => ({ 
-        ...prev, 
-        fileInfo,
-        playerType,
-        isPlayerReady: false
-      }));
-
-      // File processing complete - PlayerContainer will handle player initialization
-      setState(prev => ({ 
-        ...prev, 
-        isLoading: false
-      }));
+      // Add to playlist
+      setState(prev => {
+        const updatedPlaylist = [...prev.playlist, ...newPlaylistItems];
+        const shouldStartPlaying = prev.playlist.length === 0; // Start playing if playlist was empty
+        
+        return {
+          ...prev,
+          playlist: updatedPlaylist,
+          currentPlaylistIndex: shouldStartPlaying ? 0 : prev.currentPlaylistIndex,
+          selectedFile: shouldStartPlaying ? newPlaylistItems[0]!.file : prev.selectedFile,
+          fileInfo: shouldStartPlaying ? newPlaylistItems[0]!.fileInfo : prev.fileInfo,
+          playerType: shouldStartPlaying ? newPlaylistItems[0]!.playerType : prev.playerType,
+          isPlayerReady: false,
+          isLoading: false
+        };
+      });
 
     } catch (error) {
       const appError: AppError = {
@@ -137,19 +180,16 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
         message: error instanceof Error ? error.message : 'Unknown error occurred',
         code: ERROR_CODES.FILE_NOT_READABLE,
         recoverable: true,
-        suggestions: ['Please try selecting the file again'],
-        fileName: file.name
+        suggestions: ['Please try selecting the files again']
       };
 
       setState(prev => ({ 
         ...prev, 
         isLoading: false, 
-        error: appError,
-        selectedFile: null,
-        fileInfo: null
+        error: appError
       }));
     }
-  }, [createFileInfo]);
+  }, [createFileInfo, state.playlist.length]);
 
   /**
    * Handles player ready event from PlayerContainer
@@ -160,6 +200,14 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
       isPlayerReady: true,
       isLoading: false
     }));
+    
+    // Try to get the video element for backlight effect
+    setTimeout(() => {
+      const videoElement = document.querySelector('video') as HTMLVideoElement;
+      if (videoElement) {
+        videoElementRef.current = videoElement;
+      }
+    }, 100);
   }, []);
 
   /**
@@ -172,6 +220,77 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
       isLoading: false,
       isPlayerReady: false
     }));
+  }, []);
+
+  /**
+   * Handles playlist reordering
+   */
+  const handlePlaylistReorder = useCallback((newPlaylist: PlaylistItem[]) => {
+    setState(prev => {
+      // Find the current item in the new playlist
+      const currentItem = prev.currentPlaylistIndex >= 0 ? prev.playlist[prev.currentPlaylistIndex] : null;
+      const newCurrentIndex = currentItem ? newPlaylist.findIndex(item => item.id === currentItem.id) : -1;
+      
+      return {
+        ...prev,
+        playlist: newPlaylist,
+        currentPlaylistIndex: newCurrentIndex
+      };
+    });
+  }, []);
+
+  /**
+   * Handles playlist item selection
+   */
+  const handlePlaylistSelect = useCallback((index: number) => {
+    const item = state.playlist[index];
+    if (!item) return;
+
+    setState(prev => ({
+      ...prev,
+      currentPlaylistIndex: index,
+      selectedFile: item.file,
+      fileInfo: item.fileInfo,
+      playerType: item.playerType,
+      isPlayerReady: false
+    }));
+  }, [state.playlist]);
+
+  /**
+   * Handles playlist item removal
+   */
+  const handlePlaylistRemove = useCallback((index: number) => {
+    setState(prev => {
+      const newPlaylist = prev.playlist.filter((_, i) => i !== index);
+      let newCurrentIndex = prev.currentPlaylistIndex;
+      
+      // Adjust current index if needed
+      if (index === prev.currentPlaylistIndex) {
+        // If removing current item, play next item or previous if no next
+        if (newPlaylist.length === 0) {
+          newCurrentIndex = -1;
+        } else if (index >= newPlaylist.length) {
+          newCurrentIndex = newPlaylist.length - 1;
+        }
+        // else keep the same index (next item will move to current position)
+      } else if (index < prev.currentPlaylistIndex) {
+        // If removing item before current, adjust index
+        newCurrentIndex = prev.currentPlaylistIndex - 1;
+      }
+
+      // Update current file if current item changed
+      const newCurrentItem = newCurrentIndex >= 0 ? newPlaylist[newCurrentIndex] : null;
+      
+      return {
+        ...prev,
+        playlist: newPlaylist,
+        currentPlaylistIndex: newCurrentIndex,
+        selectedFile: newCurrentItem?.file || null,
+        fileInfo: newCurrentItem?.fileInfo || null,
+        playerType: newCurrentItem?.playerType || null,
+        isPlayerReady: newCurrentItem ? false : prev.isPlayerReady
+      };
+    });
   }, []);
 
   /**
@@ -269,20 +388,52 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
           player.seek(Math.min(player.duration, player.currentTime + (1/30))); // Assume 30fps
         }
         break;
+      
+      case 'next-video':
+        navigatePlaylist('next');
+        break;
+      
+      case 'previous-video':
+        navigatePlaylist('previous');
+        break;
     }
   }, []);
+
+  /**
+   * Navigate to next/previous playlist item
+   */
+  const navigatePlaylist = useCallback((direction: 'next' | 'previous') => {
+    if (state.playlist.length === 0) return;
+    
+    let newIndex: number;
+    if (direction === 'next') {
+      newIndex = state.currentPlaylistIndex + 1;
+      if (newIndex >= state.playlist.length) {
+        newIndex = 0; // Loop to beginning
+      }
+    } else {
+      newIndex = state.currentPlaylistIndex - 1;
+      if (newIndex < 0) {
+        newIndex = state.playlist.length - 1; // Loop to end
+      }
+    }
+    
+    handlePlaylistSelect(newIndex);
+  }, [state.playlist.length, state.currentPlaylistIndex, handlePlaylistSelect]);
 
   /**
    * Cleanup on unmount and file changes
    */
   useEffect(() => {
     return () => {
-      // Clean up object URLs using privacy security service
-      if (state.fileInfo?.url) {
-        privacySecurityService.revokeSecureObjectUrl(state.fileInfo.url);
-      }
+      // Clean up object URLs for all playlist items
+      state.playlist.forEach(item => {
+        if (item.fileInfo.url) {
+          privacySecurityService.revokeSecureObjectUrl(item.fileInfo.url);
+        }
+      });
     };
-  }, [state.fileInfo?.url]);
+  }, [state.playlist]);
 
   /**
    * Global cleanup on app unmount
@@ -314,88 +465,64 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
         isMobile && isLandscape && "space-y-2 p-2",
         className
       )}>
-        {/* Welcome message - more compact on mobile landscape */}
-        <div className={cn(
-          "text-center space-y-2 px-2",
-          isMobile && isLandscape && "space-y-1"
-        )}>
-          {!(isMobile && isLandscape) && (
+        {/* Welcome message - only show when no playlist */}
+        {state.playlist.length === 0 && (
+          <div className="text-center space-y-2 px-2">
+            <h1 className="text-2xl sm:text-3xl font-bold">PlaybackMan</h1>
             <p className="text-muted-foreground text-sm sm:text-base">
-              Upload and play video files locally in your browser
+              Your local video player - no uploads, complete privacy
             </p>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* File Uploader */}
-        <FileUploader
-          onFileSelect={handleFileSelect}
-          acceptedFormats={acceptedFormats}
-          isLoading={state.isLoading}
-          error={state.error}
-        />
-
-        {/* Loading State for File Processing */}
-        {state.isLoading && !state.fileInfo && (
-          <div className="flex justify-center py-8">
-            <LoadingState
-              message="Processing video file..."
-              size="lg"
+        {/* Show file uploader when no playlist */}
+        {state.playlist.length === 0 && (
+          <div className="space-y-4">
+            <CompactFileUploader
+              onFileSelect={handleFileSelect}
+              acceptedFormats={acceptedFormats}
+              isLoading={state.isLoading}
+              error={state.error}
+              multiple={true}
             />
+            
+            {/* Show keyboard shortcuts instead of empty playlist message */}
+            <div className="animate-in fade-in duration-500">
+              <KeyboardShortcutsLegend onShortcut={handleKeyboardShortcut} />
+            </div>
           </div>
         )}
 
         {/* Player Container */}
-        {state.fileInfo && (
+        {state.fileInfo && state.selectedFile && (
           <div className="space-y-3 sm:space-y-4">
-            {/* File Information with enhanced visual hierarchy */}
-            <div className="bg-card border rounded-lg p-4 sm:p-6 transition-all duration-300 ease-in-out shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-base sm:text-lg text-card-foreground">
-                  Now Playing
-                </h3>
-                <div className="flex items-center space-x-2">
-                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
-                  <span className="text-xs text-muted-foreground font-medium">
-                    {state.playerType === 'videojs' ? 'Video.js' : 'MediaElement.js'}
-                  </span>
-                </div>
-              </div>
+            {/* Video Player with ambient backlight and smooth transition */}
+            <div className="relative transition-all duration-300 ease-in-out">
+              {/* Ambient video backlight */}
+              <VideoBacklight
+                videoElement={videoElementRef.current}
+                intensity={0.4}
+                enabled={state.isPlayerReady}
+              />
               
-              <div className="space-y-3">
-                {/* File name with icon */}
-                <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-card-foreground truncate" title={state.fileInfo.name}>
-                      {state.fileInfo.name}
-                    </p>
-                    <div className="flex items-center space-x-4 mt-1 text-xs text-muted-foreground">
-                      <span>{(state.fileInfo.size / (1024 * 1024)).toFixed(2)} MB</span>
-                      <span className="uppercase">{state.fileInfo.extension}</span>
-                      <span>{state.fileInfo.type || 'Unknown type'}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Video Player with smooth transition and responsive sizing */}
-            <div className="transition-all duration-300 ease-in-out">
+              {/* Static backlight fallback */}
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5 rounded-lg blur-xl scale-110 -z-10" />
+              
               <PlayerContainer
                 ref={playerRef}
-                file={state.selectedFile!}
+                file={state.selectedFile}
                 playerType={state.playerType!}
                 onReady={handlePlayerReady}
                 onError={handlePlayerError}
+                onPreviousVideo={() => navigatePlaylist('previous')}
+                onNextVideo={() => navigatePlaylist('next')}
                 className={cn(
                   // Base responsive heights
                   "min-h-[200px] sm:min-h-[300px] lg:min-h-[400px]",
                   // Mobile landscape optimization
-                  isMobile && isLandscape && "min-h-[150px]"
+                  isMobile && isLandscape && "min-h-[150px]",
+                  // Enhanced styling with shadow
+                  "shadow-2xl shadow-black/20 relative z-10 border border-white/10"
                 )}
               />
             </div>
@@ -409,12 +536,41 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
               </div>
             )}
 
-            {/* Keyboard Shortcuts Legend */}
-            {state.isPlayerReady && (
-              <div className="animate-in fade-in duration-700 delay-300">
-                <KeyboardShortcutsLegend onShortcut={handleKeyboardShortcut} />
-              </div>
-            )}
+          </div>
+        )}
+
+        {/* Playlist below video player */}
+        {state.playlist.length > 0 && (
+          <div className="space-y-4">
+            {/* Compact uploader for adding more videos */}
+            <div className="animate-in fade-in duration-500">
+              <CompactFileUploader
+                onFileSelect={handleFileSelect}
+                acceptedFormats={acceptedFormats}
+                isLoading={state.isLoading}
+                error={state.error}
+                multiple={true}
+              />
+            </div>
+            
+            <Playlist
+              playlist={state.playlist}
+              currentIndex={state.currentPlaylistIndex}
+              onReorder={handlePlaylistReorder}
+              onSelect={handlePlaylistSelect}
+              onRemove={handlePlaylistRemove}
+              onFileSelect={handleFileSelect}
+              acceptedFormats={acceptedFormats}
+              isLoading={state.isLoading}
+              error={state.error}
+            />
+          </div>
+        )}
+
+        {/* Keyboard Shortcuts Legend - below playlist */}
+        {state.isPlayerReady && (
+          <div className="animate-in fade-in duration-700 delay-300">
+            <KeyboardShortcutsLegend onShortcut={handleKeyboardShortcut} />
           </div>
         )}
 
@@ -425,11 +581,8 @@ export function VideoPlayerApp({ className }: VideoPlayerAppProps) {
               error={state.error}
               onDismiss={clearError}
               onRetry={() => {
-                // Retry file processing if it's a file error
-                if (state.error?.type === 'file' && state.selectedFile) {
-                  clearError();
-                  handleFileSelect(state.selectedFile);
-                }
+                // Clear error and allow user to try again
+                clearError();
               }}
             />
           </div>

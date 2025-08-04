@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   Play, 
   Pause, 
@@ -35,6 +35,8 @@ interface PlayerControlsProps {
   onPlaybackRateChange: (rate: number) => void;
   onCaptionsToggle: () => void;
   onSubtitleUpload?: (file: File) => void;
+  onPreviousVideo?: () => void;
+  onNextVideo?: () => void;
   className?: string;
 }
 
@@ -65,44 +67,74 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   onPlaybackRateChange,
   onCaptionsToggle,
   onSubtitleUpload,
+  onPreviousVideo,
+  onNextVideo,
   className
 }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverPosition, setHoverPosition] = useState(0);
   const [isDraggingVolume, setIsDraggingVolume] = useState(false);
+  const [isDraggingProgress, setIsDraggingProgress] = useState(false);
+  const [dragProgress, setDragProgress] = useState(0);
+  const [isSeekingToTarget, setIsSeekingToTarget] = useState(false);
+  const [targetProgress, setTargetProgress] = useState(0);
   
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progress = isDraggingProgress 
+    ? dragProgress 
+    : isSeekingToTarget 
+      ? targetProgress
+      : duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  const handleProgressClick = (e: React.MouseEvent) => {
-    if (!progressRef.current || duration === 0) return;
+  const getProgressPercentage = (e: React.MouseEvent | MouseEvent) => {
+    if (!progressRef.current || duration === 0 || !isFinite(duration)) return 0;
     
     const rect = progressRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percentage = clickX / rect.width;
-    const newTime = percentage * duration;
+    const x = e.clientX - rect.left;
+    return Math.max(0, Math.min(1, x / rect.width));
+  };
+
+  const handleProgressMouseDown = (e: React.MouseEvent) => {
+    if (!progressRef.current || duration === 0 || !isFinite(duration)) return;
     
-    onSeek(Math.max(0, Math.min(duration, newTime)));
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setIsDraggingProgress(true);
+    
+    const percentage = getProgressPercentage(e);
+    setDragProgress(percentage * 100);
+    
+    // Set hover time for immediate feedback
+    const time = percentage * duration;
+    setHoverTime(time);
+    setHoverPosition(percentage * 100);
   };
 
   const handleProgressMouseMove = (e: React.MouseEvent) => {
-    if (!progressRef.current || duration === 0) return;
+    if (!progressRef.current || duration === 0 || !isFinite(duration)) return;
     
-    const rect = progressRef.current.getBoundingClientRect();
-    const hoverX = e.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, hoverX / rect.width));
+    const percentage = getProgressPercentage(e);
     const time = percentage * duration;
     
+    if (isDraggingProgress) {
+      // Update drag progress for visual feedback
+      setDragProgress(percentage * 100);
+    }
+    
+    // Always update hover time and position
     setHoverTime(time);
     setHoverPosition(percentage * 100);
   };
 
   const handleProgressMouseLeave = () => {
-    setHoverTime(null);
+    if (!isDraggingProgress) {
+      setHoverTime(null);
+    }
   };
 
   const handleVolumeChange = (e: React.MouseEvent) => {
@@ -131,14 +163,92 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     setIsDraggingVolume(false);
   };
 
+  // Global mouse event handlers for progress dragging
+  const handleGlobalMouseMove = useCallback((e: MouseEvent) => {
+    if (isDraggingProgress && progressRef.current && duration > 0) {
+      const percentage = getProgressPercentage(e);
+      const time = percentage * duration;
+      
+      setDragProgress(percentage * 100);
+      setHoverTime(time);
+      setHoverPosition(percentage * 100);
+    }
+  }, [isDraggingProgress, duration]);
+
+  const handleGlobalMouseUp = useCallback((e: MouseEvent) => {
+    if (isDraggingProgress && progressRef.current && duration > 0) {
+      const percentage = getProgressPercentage(e);
+      const newTime = percentage * duration;
+      
+      if (isFinite(newTime) && newTime >= 0) {
+        // Set target position and seeking state
+        setTargetProgress(percentage * 100);
+        setIsSeekingToTarget(true);
+        onSeek(newTime);
+        
+        // Fallback timeout to clear seeking state
+        setTimeout(() => {
+          setIsSeekingToTarget(false);
+          setTargetProgress(0);
+        }, 1000);
+      }
+      
+      setIsDraggingProgress(false);
+      setHoverTime(null);
+    }
+  }, [isDraggingProgress, duration, onSeek]);
+
+  // Add global event listeners for dragging
+  useEffect(() => {
+    if (isDraggingProgress) {
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+    }
+  }, [isDraggingProgress, handleGlobalMouseMove, handleGlobalMouseUp]);
+
+  // Clear seeking state when video catches up to target
+  useEffect(() => {
+    if (isSeekingToTarget && duration > 0) {
+      const currentProgress = (currentTime / duration) * 100;
+      const targetDiff = Math.abs(currentProgress - targetProgress);
+      
+      // If we're within 1% of the target, consider the seek complete
+      if (targetDiff < 1) {
+        setIsSeekingToTarget(false);
+        setTargetProgress(0);
+      }
+    }
+  }, [currentTime, duration, isSeekingToTarget, targetProgress]);
+
+  const [lastPrevClick, setLastPrevClick] = useState<number>(0);
+
   const handleSkipBack = () => {
-    const newTime = Math.max(0, currentTime - 10);
-    onSeek(newTime, true, -10);
+    const now = Date.now();
+    const timeSinceLastClick = now - lastPrevClick;
+    
+    if (timeSinceLastClick < 300) {
+      // Double click - go to previous video
+      if (onPreviousVideo) {
+        onPreviousVideo();
+      }
+    } else {
+      // Single click - restart current video
+      onSeek(0, true, -currentTime);
+    }
+    
+    setLastPrevClick(now);
   };
 
   const handleSkipForward = () => {
-    const newTime = Math.min(duration, currentTime + 10);
-    onSeek(newTime, true, 10);
+    // Single click - go to next video
+    if (onNextVideo) {
+      onNextVideo();
+    }
   };
 
   const handleSubtitleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,28 +261,42 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   return (
     <React.Fragment>
       {/* Progress Bar - Positioned above controls */}
-      <div className="absolute left-0 right-0 bottom-12 px-4 py-2">
+      <div className="absolute left-0 right-0 bottom-12 px-4 py-2 z-10">
         <div
           ref={progressRef}
-          className="h-0.5 bg-white/15 rounded-full cursor-pointer group hover:h-1 transition-all duration-200 overflow-hidden"
-          onClick={handleProgressClick}
+          className={cn(
+            "h-1 bg-white/15 rounded-full cursor-pointer group hover:h-1.5 transition-all duration-200 relative select-none",
+            isDraggingProgress && "h-1.5 bg-white/25"
+          )}
+          onMouseDown={handleProgressMouseDown}
           onMouseMove={handleProgressMouseMove}
           onMouseLeave={handleProgressMouseLeave}
         >
           {/* Progress Fill */}
           <div
-            className="h-full bg-gradient-to-r from-white via-white/90 to-white/80 rounded-full relative transition-all duration-100 ease-linear"
+            className={cn(
+              "h-full bg-gradient-to-r from-white via-white/90 to-white/80 rounded-full relative",
+              isDraggingProgress ? "transition-none" : "transition-all duration-100 ease-linear"
+            )}
             style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
           >
             {/* Hover glow effect */}
             <div className="absolute inset-0 bg-white/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+            
+            {/* Scrub indicator (thumb) when dragging */}
+            {isDraggingProgress && (
+              <div className="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg border-2 border-white/20" />
+            )}
           </div>
           
           {/* Hover Preview */}
-          {hoverTime !== null && duration > 0 && (
+          {hoverTime !== null && duration > 0 && isFinite(hoverTime) && (
             <div
-              className="absolute top-0 transform -translate-y-full -translate-x-1/2 bg-black/95 backdrop-blur-md text-white text-xs px-2 py-1.5 rounded-md pointer-events-none whitespace-nowrap shadow-xl border border-white/10"
-              style={{ left: `${Math.max(0, Math.min(100, hoverPosition))}%` }}
+              className={cn(
+                "absolute -top-8 transform -translate-x-1/2 bg-black/95 backdrop-blur-md text-white text-xs px-3 py-2 rounded-lg pointer-events-none whitespace-nowrap shadow-xl border border-white/20 z-20",
+                isDraggingProgress && "bg-primary text-primary-foreground border-primary/20"
+              )}
+              style={{ left: `${Math.max(5, Math.min(95, hoverPosition))}%` }}
             >
               {formatTime(hoverTime)}
             </div>

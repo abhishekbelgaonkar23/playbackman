@@ -11,6 +11,8 @@ interface MediaElementPlayerProps {
   options: MediaElementOptions;
   onReady: (player: Player) => void;
   onError: (error: string, canRetry?: boolean) => void;
+  onPreviousVideo?: () => void;
+  onNextVideo?: () => void;
 }
 
 // MediaElement.js player wrapper class
@@ -154,36 +156,39 @@ const MediaElementPlayer = React.forwardRef<any, MediaElementPlayerProps>(({
   fileUrl, 
   options, 
   onReady, 
-  onError 
+  onError,
+  onPreviousVideo,
+  onNextVideo
 }, ref) => {
   const playerRef = useRef<MediaElementPlayerWrapper | null>(null);
+  const enhancedPlayerRef = useRef<any>(null);
   const hasInitialized = useRef(false);
 
-  // Create a simple player wrapper for the enhanced video player
+  // Create a player wrapper that connects to the enhanced video player
   const createPlayerWrapper = useCallback(() => {
     if (hasInitialized.current) return;
     
     hasInitialized.current = true;
     
-    // Create a minimal wrapper that satisfies the Player interface
+    // Create a wrapper that delegates to the enhanced video player
     const playerWrapper: Player = {
-      play: () => {},
-      pause: () => {},
+      play: () => enhancedPlayerRef.current?.play(),
+      pause: () => enhancedPlayerRef.current?.pause(),
       destroy: () => {
         hasInitialized.current = false;
         playerRef.current = null;
       },
       on: () => {},
-      currentTime: 0,
-      duration: 0,
-      volume: 1,
-      muted: false,
-      paused: true,
-      ended: false,
-      seek: () => {},
-      setVolume: () => {},
-      toggleMute: () => {},
-      togglePlayPause: () => {}
+      get currentTime() { return enhancedPlayerRef.current?.currentTime || 0; },
+      get duration() { return enhancedPlayerRef.current?.duration || 0; },
+      get volume() { return enhancedPlayerRef.current?.volume || 1; },
+      get muted() { return enhancedPlayerRef.current?.muted || false; },
+      get paused() { return !enhancedPlayerRef.current?.isPlaying; },
+      get ended() { return enhancedPlayerRef.current?.ended || false; },
+      seek: (time: number) => enhancedPlayerRef.current?.seek(time),
+      setVolume: (volume: number) => enhancedPlayerRef.current?.setVolume(volume),
+      toggleMute: () => enhancedPlayerRef.current?.toggleMute(),
+      togglePlayPause: () => enhancedPlayerRef.current?.togglePlayPause()
     };
     
     playerRef.current = playerWrapper as MediaElementPlayerWrapper;
@@ -205,7 +210,16 @@ const MediaElementPlayer = React.forwardRef<any, MediaElementPlayerProps>(({
 
   return (
     <EnhancedVideoPlayer
-      ref={ref}
+      ref={(el) => {
+        enhancedPlayerRef.current = el;
+        if (ref) {
+          if (typeof ref === 'function') {
+            ref(el);
+          } else {
+            ref.current = el;
+          }
+        }
+      }}
       src={fileUrl}
       autoPlay={false}
       loop={options.loop || false}
@@ -213,6 +227,8 @@ const MediaElementPlayer = React.forwardRef<any, MediaElementPlayerProps>(({
       onLoadStart={() => console.log('MediaElement: Load started')}
       onLoadEnd={() => console.log('MediaElement: Load ended')}
       onError={(error) => onError(error, true)}
+      onPreviousVideo={onPreviousVideo}
+      onNextVideo={onNextVideo}
       className="w-full h-full"
     />
   );

@@ -22,6 +22,8 @@ const shortcuts: ShortcutItem[] = [
   { keys: ['L'], description: 'Fast forward 10 seconds', category: 'playback', action: 'forward-10' },
   { keys: ['<', ','], description: 'Previous frame (when paused)', category: 'playback', action: 'frame-back' },
   { keys: ['>', '.'], description: 'Next frame (when paused)', category: 'playback', action: 'frame-forward' },
+  { keys: ['N'], description: 'Next video in playlist', category: 'playback', action: 'next-video' },
+  { keys: ['P'], description: 'Previous video in playlist', category: 'playback', action: 'previous-video' },
   
   // Navigation
   { keys: ['←'], description: 'Seek backward 5 seconds', category: 'navigation', action: 'seek-back-5' },
@@ -61,7 +63,7 @@ export const KeyboardShortcutsLegend: React.FC<KeyboardShortcutsLegendProps> = (
     if (!acc[shortcut.category]) {
       acc[shortcut.category] = [];
     }
-    acc[shortcut.category].push(shortcut);
+    acc[shortcut.category]!.push(shortcut);
     return acc;
   }, {} as Record<string, ShortcutItem[]>);
 
@@ -98,6 +100,8 @@ export const KeyboardShortcutsLegend: React.FC<KeyboardShortcutsLegendProps> = (
           if (shortcutKey === ',' && key === ',' && !isShift) return true;
           if (shortcutKey === '.' && key === '.' && !isShift) return true;
           if (shortcutKey === '0-9' && /^[0-9]$/.test(key)) return true;
+          if (shortcutKey === 'N' && key === 'n' && !isShift) return true;
+          if (shortcutKey === 'P' && key === 'p' && !isShift) return true;
           
           // Regular key matching
           return shortcutKey.toLowerCase() === key.toLowerCase();
@@ -112,7 +116,7 @@ export const KeyboardShortcutsLegend: React.FC<KeyboardShortcutsLegendProps> = (
           const percentage = parseInt(key) * 10;
           onShortcut(matchingShortcut.action, percentage);
         } else {
-          onShortcut(matchingShortcut.action, matchingShortcut.data);
+          onShortcut(matchingShortcut.action);
         }
       }
     };

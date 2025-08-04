@@ -53,6 +53,8 @@ export const PlayerContainer = React.forwardRef<any, PlayerContainerProps>(({
   playerType, 
   onError, 
   onReady, 
+  onPreviousVideo,
+  onNextVideo,
   className 
 }, ref) => {
   const [state, setState] = useState<PlayerContainerState>({
@@ -309,6 +311,8 @@ export const PlayerContainer = React.forwardRef<any, PlayerContainerProps>(({
           options={videoJSOptions}
           onReady={handlePlayerReady}
           onError={handlePlayerError}
+          onPreviousVideo={onPreviousVideo}
+          onNextVideo={onNextVideo}
           key={`videojs-${file.name}-${file.lastModified}-${state.retryCount}`}
         />
       ) : (
@@ -319,6 +323,8 @@ export const PlayerContainer = React.forwardRef<any, PlayerContainerProps>(({
           options={mediaElementOptions}
           onReady={handlePlayerReady}
           onError={handlePlayerError}
+          onPreviousVideo={onPreviousVideo}
+          onNextVideo={onNextVideo}
           key={`mediaelement-${file.name}-${file.lastModified}-${state.retryCount}`}
         />
       )}

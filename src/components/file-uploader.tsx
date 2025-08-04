@@ -15,7 +15,8 @@ export function FileUploader({
   onFileSelect,
   acceptedFormats,
   isLoading,
-  error
+  error,
+  multiple = false
 }: FileUploaderProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
@@ -29,18 +30,31 @@ export function FileUploader({
   // Create accept string for file input
   const acceptString = acceptedFormats.join(',');
 
-  const handleFileSelect = useCallback((file: File) => {
-    // If multiple files are selected, only process the first one
-    setSelectedFileName(file.name);
-    onFileSelect(file);
+  const handleFileSelect = useCallback((files: File | File[]) => {
+    if (Array.isArray(files)) {
+      if (files.length === 1) {
+        setSelectedFileName(files[0]!.name);
+      } else {
+        setSelectedFileName(`${files.length} files selected`);
+      }
+      onFileSelect(files);
+    } else {
+      setSelectedFileName(files.name);
+      onFileSelect(files);
+    }
   }, [onFileSelect]);
 
   const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
-    if (files && files.length > 0 && files[0]) {
-      handleFileSelect(files[0]);
+    if (files && files.length > 0) {
+      if (multiple) {
+        const fileArray = Array.from(files);
+        handleFileSelect(fileArray);
+      } else if (files[0]) {
+        handleFileSelect(files[0]);
+      }
     }
-  }, [handleFileSelect]);
+  }, [handleFileSelect, multiple]);
 
   const handleDragEnter = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -74,17 +88,21 @@ export function FileUploader({
 
     const files = event.dataTransfer.files;
     if (files && files.length > 0) {
-      // Filter for video files and take the first one
+      // Filter for video files
       const videoFiles = Array.from(files).filter(file => 
         file.type.startsWith('video/') || 
         acceptedFormats.some(format => file.name.toLowerCase().endsWith(format.replace('*', '')))
       );
       
-      if (videoFiles.length > 0 && videoFiles[0]) {
-        handleFileSelect(videoFiles[0]);
+      if (videoFiles.length > 0) {
+        if (multiple) {
+          handleFileSelect(videoFiles);
+        } else if (videoFiles[0]) {
+          handleFileSelect(videoFiles[0]);
+        }
       }
     }
-  }, [acceptedFormats, handleFileSelect]);
+  }, [acceptedFormats, handleFileSelect, multiple]);
 
   const handleBrowseClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -137,10 +155,11 @@ export function FileUploader({
             ref={fileInputRef}
             type="file"
             accept={acceptString}
+            multiple={multiple}
             onChange={handleFileInputChange}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             disabled={isLoading}
-            aria-label="Select video file"
+            aria-label={multiple ? "Select video files" : "Select video file"}
           />
 
           <div className={cn(
@@ -175,8 +194,8 @@ export function FileUploader({
                     "font-medium",
                     isMobile && isLandscape ? "text-sm" : "text-base sm:text-lg"
                   )}>
-                    {selectedFileName ? 'File Selected' : (
-                      isTouchDevice ? 'Select a video file' : 'Select or drag a video file'
+                    {selectedFileName ? (multiple ? 'Files Selected' : 'File Selected') : (
+                      isTouchDevice ? (multiple ? 'Select video files' : 'Select a video file') : (multiple ? 'Select or drag video files' : 'Select or drag a video file')
                     )}
                   </p>
                   <p className="text-xs sm:text-sm text-muted-foreground px-2">
@@ -185,7 +204,7 @@ export function FileUploader({
                     ) : (
                       <>
                         <span className="hidden sm:inline">Supports MP4, WebM, OGG, FLV, WMV formats</span>
-                        <span className="sm:hidden">Tap to select video file</span>
+                        <span className="sm:hidden">{multiple ? 'Tap to select video files' : 'Tap to select video file'}</span>
                       </>
                     )}
                   </p>
@@ -204,7 +223,7 @@ export function FileUploader({
                   >
                     {isLoading ? 'Processing...' : (
                       <>
-                        <span className="sm:hidden">Select Video File</span>
+                        <span className="sm:hidden">{multiple ? 'Select Video Files' : 'Select Video File'}</span>
                         <span className="hidden sm:inline">Browse Files</span>
                       </>
                     )}
